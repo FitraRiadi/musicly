@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  BadgeCheck,
   Clock3,
   Disc3,
   Ellipsis,
@@ -18,6 +17,7 @@ import {
   Shuffle,
   UserCheck,
   UserPlus,
+  UserRound,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Album, Artist, Lyrics, Track } from "@/lib/types";
@@ -415,7 +415,7 @@ export function TrackPage() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate(`/artist/${track.artist.id}`)}>
-                <BadgeCheck className="h-4 w-4" /> Go to artist
+                <UserRound className="h-4 w-4" /> Go to artist
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate(`/album/${track.album.id}`)}>
                 <Disc3 className="h-4 w-4" /> Go to album
@@ -578,10 +578,7 @@ export function TrackPage() {
                 className="h-16 w-16 rounded-full object-cover ring-2 ring-white/10"
               />
               <div className="min-w-0">
-                <p className="flex items-center gap-1 truncate text-sm font-bold">
-                  {track.artist.name}
-                  <BadgeCheck className="h-4 w-4 shrink-0 text-sky-400" />
-                </p>
+                <p className="truncate text-sm font-bold">{track.artist.name}</p>
                 <p className="mt-0.5 text-xs text-white/45">
                   {artist ? `${formatCount(artist.fans)} monthly listeners` : "Artist"}
                 </p>
