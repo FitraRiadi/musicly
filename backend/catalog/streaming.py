@@ -171,16 +171,20 @@ def _iter_upstream(upstream):
         upstream.close()
 
 
-def stream_response(track, request):
+def stream_response(track, request, *, ignore_range: bool = False):
     """Proxy the scraper's audio stream, preserving HTTP Range semantics.
 
     Returns ``None`` when the scraper is disabled or cannot serve the track so
-    the caller can fall back to the Deezer preview.
+    the caller can fall back to the Deezer preview. ``ignore_range`` is used by
+    the download endpoint so a download manager's partial request cannot turn
+    the saved file into a fragment.
     """
     if not enabled():
         return None
 
-    range_header = (request.headers.get("Range") or "").strip() or None
+    range_header = None
+    if not ignore_range:
+        range_header = (request.headers.get("Range") or "").strip() or None
 
     try:
         video_id = resolve_video_id(track)

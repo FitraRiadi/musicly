@@ -8,6 +8,7 @@ urlpatterns = [
     path("search/suggest/", views.SearchSuggestView.as_view(), name="search-suggest"),
     path("recent-searches/", views.RecentSearchView.as_view(), name="recent-searches"),
     path("tracks/<str:track_id>/stream/", views.TrackStreamView.as_view(), name="track-stream"),
+    path("tracks/<str:track_id>/download/", views.TrackDownloadView.as_view(), name="track-download"),
     path("tracks/<str:track_id>/preview/", views.TrackPreviewView.as_view(), name="track-preview"),
     path("tracks/<str:track_id>/lyrics/", views.TrackLyricsView.as_view(), name="track-lyrics"),
     path("tracks/<str:track_id>/", views.TrackDetailView.as_view(), name="track-detail"),

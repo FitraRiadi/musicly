@@ -14,6 +14,7 @@ from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractHour, TruncDate
 from django.http import FileResponse, Http404, HttpResponseRedirect, StreamingHttpResponse
 from django.utils import timezone
+from django.utils.http import content_disposition_header
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -299,11 +300,73 @@ class TrackDetailView(APIView):
 RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 STREAM_CHUNK = 64 * 1024
 
+_AUDIO_SUFFIX_BY_TYPE = {
+    "audio/mp4": ".m4a",
+    "audio/m4a": ".m4a",
+    "audio/x-m4a": ".m4a",
+    "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/opus": ".opus",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/flac": ".flac",
+}
+_UNSAFE_FILENAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_RESERVED_FILENAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
 
 def _range_not_satisfiable(size: int) -> Response:
     response = Response(status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE)
     response["Content-Range"] = f"bytes */{size}"
     return response
+
+
+def _stream_track(track_id: str | int) -> Track:
+    """Find a local Track row, refreshing its metadata from Deezer if needed."""
+    raw = str(track_id)
+    deezer_only = raw.startswith("dz-")
+    numeric = raw[3:] if deezer_only else raw
+
+    track = None
+    if numeric.isdigit():
+        if deezer_only:
+            track = Track.objects.filter(deezer_id=int(numeric)).first()
+        else:
+            track = Track.objects.filter(pk=numeric).first()
+            if track is None:
+                track = Track.objects.filter(deezer_id=int(numeric)).first()
+    if track is None:
+        try:
+            track = resolve_track(numeric)
+        except deezer.DeezerError as exc:
+            raise Http404("Track not found.") from exc
+    return track
+
+
+def _audio_suffix(content_type: str | None, fallback: str = ".m4a") -> str:
+    mime = (content_type or "").split(";", 1)[0].strip().lower()
+    return _AUDIO_SUFFIX_BY_TYPE.get(mime, fallback)
+
+
+def _download_filename(track: Track, suffix: str) -> str:
+    """Build a readable, OS-safe filename for a downloaded track."""
+    base = f"{track.artist_name} - {track.title}".strip()
+    base = _UNSAFE_FILENAME_RE.sub("", base)
+    base = re.sub(r"\s+", " ", base).strip(" .")
+    if not base:
+        base = f"Musicly track {track.pk}"
+    if base.upper() in _RESERVED_FILENAMES:
+        base = f"_{base}"
+    return f"{base[:150]}{suffix}"
 
 
 class TrackStreamView(APIView):
@@ -330,23 +393,7 @@ class TrackStreamView(APIView):
         return HttpResponseRedirect(f"/tracks/{track.pk}/preview/")
 
     def get(self, request, track_id):
-        raw = str(track_id)
-        deezer_only = raw.startswith("dz-")
-        numeric = raw[3:] if deezer_only else raw
-
-        track = None
-        if numeric.isdigit():
-            if deezer_only:
-                track = Track.objects.filter(deezer_id=int(numeric)).first()
-            else:
-                track = Track.objects.filter(pk=numeric).first()
-                if track is None:
-                    track = Track.objects.filter(deezer_id=int(numeric)).first()
-        if track is None:
-            try:
-                track = resolve_track(numeric)
-            except deezer.DeezerError as exc:
-                raise Http404("Track not found.") from exc
+        track = _stream_track(track_id)
 
         if not track.audio_file:
             return self._remote_stream(track, request)
@@ -406,6 +453,51 @@ class TrackStreamView(APIView):
         response["Content-Length"] = str(length)
         response["Content-Range"] = f"bytes {start}-{end}/{size}"
         response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class TrackDownloadView(APIView):
+    """Send a full track as a downloadable attachment.
+
+    The browser's own download manager chooses the destination, so Musicly
+    never asks for a folder or writes anything server-side. Local licensed
+    audio is sent directly; otherwise the ytmp3 stream is proxied with an
+    attachment filename. Preview-only tracks are not downloadable.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, track_id):
+        track = _stream_track(track_id)
+
+        if not track.audio_file:
+            response = streaming.stream_response(track, request, ignore_range=True)
+            if response is None:
+                raise Http404("Full audio is not available for this track.")
+            suffix = _audio_suffix(response.get("Content-Type"))
+            response["Content-Disposition"] = content_disposition_header(
+                True, _download_filename(track, suffix)
+            )
+            response["Cache-Control"] = "no-store"
+            return response
+
+        field = track.audio_file
+        try:
+            size = field.size
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            raise Http404("The local audio file is missing.") from exc
+
+        content_type = mimetypes.guess_type(field.name)[0] or "audio/mpeg"
+        suffix = Path(field.name).suffix.lower() or _audio_suffix(content_type)
+        response = FileResponse(
+            field.open("rb"),
+            content_type=content_type,
+            as_attachment=True,
+            filename=_download_filename(track, suffix),
+        )
+        response["Content-Length"] = str(size)
+        response["Cache-Control"] = "private, max-age=0"
         return response
 
 

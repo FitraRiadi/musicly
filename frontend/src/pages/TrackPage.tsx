@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Clock3,
   Disc3,
+  Download,
   Ellipsis,
   ExternalLink,
   Heart,
@@ -20,6 +21,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { downloadTrack } from "@/lib/download";
 import type { Album, Artist, Lyrics, Track } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
 import { MediaCard } from "@/components/music/MediaCard";
@@ -295,6 +297,14 @@ export function TrackPage() {
     }
   };
 
+  const handleDownload = () => {
+    if (!downloadTrack(track)) {
+      toast("Full audio is not available for this song.", "error");
+      return;
+    }
+    toast("Download started. Check your Downloads folder.", "success");
+  };
+
   return (
     <div className="animate-fade-up pb-12">
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px] overflow-hidden">
@@ -422,6 +432,10 @@ export function TrackPage() {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={copySongLink}>
                 <Share2 className="h-4 w-4" /> Copy song link
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleDownload}>
+                <Download className="h-4 w-4" /> Download
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

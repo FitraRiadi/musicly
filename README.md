@@ -11,6 +11,7 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, on-demand fu
 
 - **Discover** - personalized greeting, recently played quick picks, charts, an editorial alt and indie spotlight, genre browsing, and live search across tracks, artists, albums, playlists, and genres.
 - **Play** - persistent player with queue, shuffle, repeat, seek, volume, media-session integration, and a full-screen mobile player. Licensed local audio is used when available; otherwise Musicly streams the full track on demand through an optional local ytmp3 bridge, and falls back to Deezer's 30-second preview when the bridge is unavailable.
+- **Download** - save a full track from the song action menu. Django sends it as an attachment and the browser's download manager chooses the destination, so there is no folder picker and nothing is stored on the server.
 - **Lyrics** - on-demand synced or plain lyrics with active-line highlighting and auto-scroll. Lyrics are cached in PostgreSQL after the first lookup.
 - **Collect** - like songs, create and edit playlists, reorder tracks, and follow artists.
 - **Analytics** - listening totals, minutes, unique tracks, top artists, most-played tracks, and activity charts built with Tremor and Recharts.
@@ -30,6 +31,7 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, on-demand fu
 | Data | PostgreSQL 18, Django ORM |
 | Catalog | Public Deezer API proxied and cached by Django |
 | Full-track stream | Optional local ytmp3 bridge (yt-dlp) proxied by Django with HTTP Range support; no files written |
+| Download | Full audio proxied as a `Content-Disposition` attachment; the browser picks the destination and Django never stores a copy |
 | Local audio | Optional uploaded MP3/audio file per track, streamed with HTTP Range support |
 | Lyrics | On-demand LRCLIB lookup plus admin-entered plain or LRC lyrics, cached in PostgreSQL |
 | PWA | vite-plugin-pwa and Workbox |
@@ -115,6 +117,8 @@ Playback precedence:
 
 The browser -> Musicly -> scraper -> googlevideo path never writes audio to disk. Musicly proxies the stream so the same URL works from another device on your LAN, not just localhost.
 
+The **Download** action uses the same source but requests `/api/tracks/<id>/download/`. Django adds an attachment filename such as `Artist - Title.m4a` (or `.mp3` for uploaded local audio) and streams the bytes through. The browser handles the actual save, so the system's default Downloads location is used and Musicly never asks for or hardcodes a folder.
+
 Then run migrations, seed demo data, and start Django:
 
 ```powershell
@@ -170,7 +174,7 @@ The dashboard includes:
 
 The stock Django admin remains available as an emergency model editor at **http://localhost:5173/django-admin/** (or `http://localhost:8000/django-admin/`).
 
-Uploaded audio lives under `MEDIA_ROOT/tracks/` and is served through `GET /api/tracks/<id>/stream/`, which supports HTTP `Range` requests and works with the browser audio element without a JWT header. When no local file exists, `GET /api/tracks/dz-<deezer_id>/stream/` resolves the track through the ytmp3 bridge and proxies it, so the same endpoint serves full playback. The `dz-` prefix avoids collisions with local track primary keys. The serializer returns `has_full_audio`, `audio_source` (`local`, `youtube`, or `preview`), and `stream_url`. If the bridge fails, the stream endpoint redirects to `/api/tracks/<id>/preview/`.
+Uploaded audio lives under `MEDIA_ROOT/tracks/` and is served through `GET /api/tracks/<id>/stream/`, which supports HTTP `Range` requests and works with the browser audio element without a JWT header. When no local file exists, `GET /api/tracks/dz-<deezer_id>/stream/` resolves the track through the ytmp3 bridge and proxies it, so the same endpoint serves full playback. The `dz-` prefix avoids collisions with local track primary keys. The serializer returns `has_full_audio`, `audio_source` (`local`, `youtube`, or `preview`), and `stream_url`. If the bridge fails, the stream endpoint redirects to `/api/tracks/<id>/preview/`. The parallel `/api/tracks/<id>/download/` endpoint returns the same audio with an attachment filename instead of redirecting to a preview.
 
 ## Production build
 
@@ -205,6 +209,7 @@ Serve `frontend/dist` from your web server and reverse-proxy `/api`, `/media`, `
 | `GET` | `/api/search/?q=&type=` | Catalog search |
 | `GET` | `/api/tracks/<id>/` | Track detail |
 | `GET` | `/api/tracks/<id>/stream/` | Stream full audio: local file first, then proxied ytmp3 bridge (supports Range) |
+| `GET` | `/api/tracks/<id>/download/` | Download full audio as an attachment; browser chooses the destination |
 | `GET` | `/api/tracks/<id>/preview/` | Redirect to a fresh Deezer preview when the cached URL has expired |
 | `GET` | `/api/tracks/<id>/lyrics/` | Cached or LRCLIB lyrics |
 | `GET` | `/api/albums/<id>/` | Album with tracks |
@@ -236,7 +241,7 @@ Staff-only dashboard endpoints:
 | `DELETE` | `/api/admin/tracks/<id>/audio/` | Remove uploaded full audio |
 | `GET` | `/api/admin/users/` | Listener list with activity counts |
 
-All user-data endpoints require `Authorization: Bearer <access>`. Catalog, lyrics, preview redirects, and both local and remote stream endpoints are public so the browser audio element and guest browsing work without a token. Deezer signs preview URLs with a short expiry, so preview playback always goes through the redirect endpoint.
+All user-data endpoints require `Authorization: Bearer <access>`. Catalog, lyrics, preview redirects, stream endpoints, and downloads are public so the browser audio element, guest browsing, and direct saves work without a token. Deezer signs preview URLs with a short expiry, so preview playback always goes through the redirect endpoint.
 
 ## Quality checks
 

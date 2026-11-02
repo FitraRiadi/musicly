@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import {
   Clock3,
+  Download,
   Ellipsis,
   ListPlus,
   ListStart,
@@ -27,6 +28,7 @@ import { useAuthStore } from "@/store/auth";
 import { useUiStore } from "@/store/ui";
 import type { Track } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
+import { downloadTrack } from "@/lib/download";
 import { LikeButton } from "@/components/music/LikeButton";
 
 export function Equalizer({ playing }: { playing: boolean }) {
@@ -85,6 +87,14 @@ export function TrackList({
     } catch {
       toast("Could not update Liked Songs.", "error");
     }
+  };
+
+  const handleDownload = (track: Track) => {
+    if (!downloadTrack(track)) {
+      toast("Full audio is not available for this song.", "error");
+      return;
+    }
+    toast("Download started. Check your Downloads folder.", "success");
   };
 
   return (
@@ -227,6 +237,9 @@ export function TrackList({
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => navigate(`/track/${track.id}`)}>
                       <Music2 className="h-4 w-4" /> Go to song
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownload(track)}>
+                      <Download className="h-4 w-4" /> Download
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => navigate(`/artist/${track.artist.id}`)}>
