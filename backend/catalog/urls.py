@@ -1,0 +1,39 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path("home/", views.HomeView.as_view(), name="home"),
+    path("search/", views.SearchView.as_view(), name="search"),
+    path("recent-searches/", views.RecentSearchView.as_view(), name="recent-searches"),
+    path("tracks/<str:track_id>/stream/", views.TrackStreamView.as_view(), name="track-stream"),
+    path("tracks/<str:track_id>/preview/", views.TrackPreviewView.as_view(), name="track-preview"),
+    path("tracks/<str:track_id>/lyrics/", views.TrackLyricsView.as_view(), name="track-lyrics"),
+    path("tracks/<str:track_id>/", views.TrackDetailView.as_view(), name="track-detail"),
+    path("albums/<str:album_id>/", views.AlbumDetailView.as_view(), name="album-detail"),
+    path("artists/<str:artist_id>/", views.ArtistDetailView.as_view(), name="artist-detail"),
+    path("genres/", views.GenreListView.as_view(), name="genres"),
+    path("genres/<str:genre_id>/", views.GenreDetailView.as_view(), name="genre-detail"),
+    path("playlists/", views.PlaylistListCreateView.as_view(), name="playlists"),
+    path("playlists/dz-<int:playlist_id>/", views.DeezerPlaylistView.as_view(), name="deezer-playlist"),
+    path("playlists/<int:playlist_id>/", views.PlaylistDetailView.as_view(), name="playlist-detail"),
+    path("playlists/<int:playlist_id>/tracks/", views.PlaylistTracksView.as_view(), name="playlist-tracks"),
+    path(
+        "playlists/<int:playlist_id>/tracks/<str:track_id>/",
+        views.PlaylistTrackDeleteView.as_view(),
+        name="playlist-track-delete",
+    ),
+    path("likes/", views.LikeView.as_view(), name="likes"),
+    path("likes/<str:track_id>/", views.LikeDeleteView.as_view(), name="like-delete"),
+    path("history/", views.HistoryView.as_view(), name="history"),
+    path("follows/", views.FollowView.as_view(), name="follows"),
+    path("follows/<str:artist_id>/", views.FollowDeleteView.as_view(), name="follow-delete"),
+    path("library/", views.LibraryView.as_view(), name="library"),
+    path("profile/", views.ProfileStatsView.as_view(), name="profile"),
+    path("insights/", views.InsightsView.as_view(), name="insights"),
+    path("admin/overview/", views.AdminOverviewView.as_view(), name="admin-overview"),
+    path("admin/tracks/", views.AdminTrackListView.as_view(), name="admin-tracks"),
+    path("admin/tracks/<int:pk>/", views.AdminTrackDetailView.as_view(), name="admin-track-detail"),
+    path("admin/tracks/<int:pk>/audio/", views.AdminTrackAudioView.as_view(), name="admin-track-audio"),
+    path("admin/users/", views.AdminUserListView.as_view(), name="admin-users"),
+]
