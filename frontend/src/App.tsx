@@ -8,6 +8,7 @@ import { LibraryPage } from "@/pages/LibraryPage";
 import { PlaylistPage } from "@/pages/PlaylistPage";
 import { AlbumPage } from "@/pages/AlbumPage";
 import { ArtistPage } from "@/pages/ArtistPage";
+import { TrackPage } from "@/pages/TrackPage";
 import { LikedSongsPage } from "@/pages/LikedSongsPage";
 import { GenrePage } from "@/pages/GenrePage";
 import { ProfilePage } from "@/pages/ProfilePage";
@@ -93,6 +94,7 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route index element={<HomePage />} />
             <Route path="search" element={<SearchPage />} />
+            <Route path="track/:id" element={<TrackPage />} />
             <Route path="album/:id" element={<AlbumPage />} />
             <Route path="artist/:id" element={<ArtistPage />} />
             <Route path="playlist/:id" element={<PlaylistPage />} />

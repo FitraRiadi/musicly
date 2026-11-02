@@ -57,7 +57,7 @@ export function MobileNowPlaying() {
           />
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <Link to={`/album/${track.album.id}`} className="line-clamp-2 text-2xl font-bold leading-tight">
+              <Link to={`/track/${track.id}`} className="line-clamp-2 text-2xl font-bold leading-tight">
                 {track.title}
               </Link>
               <Link to={`/artist/${track.artist.id}`} className="mt-1 block truncate text-base text-white/70">

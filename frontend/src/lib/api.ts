@@ -14,6 +14,7 @@ import type {
   Lyrics,
   Playlist,
   SearchResults,
+  SearchSuggestions,
   Track,
   User,
 } from "./types";
@@ -217,6 +218,8 @@ export const api = {
   home: () => request<{ sections: HomeSection[]; greeting: string; degraded?: string }>("/home/", { auth: false }),
   search: (q: string, type = "all", limit = 20, index = 0) =>
     request<SearchResults>(`/search/${query({ q, type, limit, index })}`, { auth: false }),
+  searchSuggestions: (q: string, limit = 6) =>
+    request<SearchSuggestions>(`/search/suggest/${query({ q, limit })}`, { auth: false }),
   recentSearches: () => request<{ items: { id: number; query: string; created_at: string }[] }>("/recent-searches/"),
   clearRecentSearches: () => request<void>("/recent-searches/", { method: "DELETE" }),
   track: (id: string) => request<Track>(`/tracks/${id}/`, { auth: false }),

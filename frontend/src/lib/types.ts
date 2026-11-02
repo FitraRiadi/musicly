@@ -95,6 +95,14 @@ export interface SearchResults {
   next?: string | null;
 }
 
+export interface SearchSuggestions {
+  query: string;
+  tracks: Track[];
+  albums: Album[];
+  artists: Artist[];
+  playlists: Playlist[];
+}
+
 export interface User {
   id: number;
   username: string;

@@ -53,7 +53,10 @@ export function AppShell() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
-      if (event.code === "Space") {
+      if (event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k")) {
+        event.preventDefault();
+        document.getElementById("global-search")?.focus();
+      } else if (event.code === "Space") {
         event.preventDefault();
         togglePlay();
       } else if (event.key === "ArrowRight" && event.altKey) {

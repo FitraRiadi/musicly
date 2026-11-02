@@ -110,7 +110,7 @@ export function PlayerBar() {
             </span>
           </Link>
           <div className="min-w-0 flex-1">
-            <Link to={`/album/${track.album.id}`} className="block truncate text-sm font-medium hover:underline">
+            <Link to={`/track/${track.id}`} className="block truncate text-sm font-medium hover:underline">
               {track.title}
             </Link>
             <Link

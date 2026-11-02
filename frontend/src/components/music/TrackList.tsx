@@ -4,6 +4,7 @@ import {
   Ellipsis,
   ListPlus,
   ListStart,
+  Music2,
   Pause,
   Play,
   Plus,
@@ -142,14 +143,18 @@ export function TrackList({
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className={cn("truncate text-[14px] font-medium", isCurrent ? "text-primary" : "text-white")}>
+                  <Link
+                    to={`/track/${track.id}`}
+                    onClick={(event) => event.stopPropagation()}
+                    className={cn("block truncate text-[14px] font-medium hover:underline", isCurrent ? "text-primary" : "text-white")}
+                  >
                     {track.title}
                     {track.explicit && (
                       <span className="ml-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-white/25 align-middle text-[8px] font-bold text-white/80">
                         E
                       </span>
                     )}
-                  </p>
+                  </Link>
                   <Link
                     to={`/artist/${track.artist.id}`}
                     onClick={(event) => event.stopPropagation()}
@@ -220,6 +225,9 @@ export function TrackList({
                     <DropdownMenuItem onClick={() => void handleLike(track)}>
                       <Heart className="h-4 w-4" /> {useLibraryStore.getState().isLiked(track.id) ? "Remove from" : "Save to"} Liked Songs
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate(`/track/${track.id}`)}>
+                      <Music2 className="h-4 w-4" /> Go to song
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => navigate(`/artist/${track.artist.id}`)}>
                       <User className="h-4 w-4" /> Go to artist
@@ -230,8 +238,8 @@ export function TrackList({
                     <DropdownMenuItem
                       onClick={async () => {
                         try {
-                          await navigator.clipboard.writeText(`${window.location.origin}/album/${track.album.id}`);
-                          toast("Link copied to clipboard", "success");
+                          await navigator.clipboard.writeText(`${window.location.origin}/track/${track.id}`);
+                          toast("Song link copied to clipboard", "success");
                         } catch {
                           toast("Could not copy the link.", "error");
                         }

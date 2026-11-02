@@ -377,17 +377,44 @@ if (followBefore === "Following") {
   check("restore unfollowed state", restored, (await followState()) || "");
 }
 
-// 6. Search interaction.
+// 6. Search interaction, autocomplete and track detail.
 await open("/search", 2500);
-await waitFor(`Boolean(document.querySelector('input[placeholder="What do you want to play?"]'))`, 12000);
-const searchTyped = await setReactInput('input[placeholder="What do you want to play?"]', "weeknd");
+const searchReady = await waitFor(`Boolean(document.querySelector('#global-search'))`, 12000);
+check("global search input present", searchReady);
+const searchTyped = await setReactInput("#global-search", "weeknd");
 check("type in search", searchTyped);
+const suggestionReady = await waitFor(
+  `document.body.innerText.includes('See all results for') && document.body.innerText.includes('The Weeknd')`,
+  20000,
+);
+check("search suggestions appear", suggestionReady);
+await shot("19a-search-suggestions");
+
+if (suggestionReady) {
+  await evaluate(`(() => {
+    const input = document.querySelector('#global-search');
+    if (!input) return false;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+    return true;
+  })()`);
+  await sleep(250);
+  await evaluate(`(() => {
+    const input = document.querySelector('#global-search');
+    if (!input) return false;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+    return true;
+  })()`);
+  const suggestionNavigated = await waitFor(`location.pathname.startsWith('/track/')`, 12000);
+  check("keyboard selects a suggestion", suggestionNavigated, await evaluate("location.pathname"));
+}
+
+await open("/search", 2200);
+await waitFor(`Boolean(document.querySelector('#global-search'))`, 12000);
+await setReactInput("#global-search", "weeknd");
 await evaluate(`(() => {
-  const input = document.querySelector('input[placeholder="What do you want to play?"]');
+  const input = document.querySelector('#global-search');
   if (!input) return false;
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
-  const form = input.closest('form');
-  if (form) form.requestSubmit();
   return true;
 })()`);
 const navigated = await waitFor(`location.search.includes('q=weeknd')`, 10000);
@@ -395,7 +422,41 @@ const searchPath = await evaluate("location.pathname + location.search");
 const resultsReady = await waitFor(`document.body.innerText.includes('Blinding Lights')`, 25000);
 check("search navigates with query", navigated, searchPath);
 check("search shows results", resultsReady);
+const songsTab = await waitFor(
+  `Boolean([...document.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Songs'))`,
+  8000,
+);
+check("search filters render", songsTab);
 await shot("19-search-flow");
+
+const trackResult = await apiGet("/api/search/?q=weeknd&type=track&limit=1");
+const trackId = trackResult.items?.[0]?.id;
+check("track api returns a song", Boolean(trackId), trackId ? `id=${trackId}` : "missing");
+if (trackId) {
+  await open(`/track/${trackId}`, 2500);
+  const trackReady = await waitFor(
+    `document.body.innerText.includes('Song details') && document.body.innerText.includes('From the album')`,
+    25000,
+  );
+  check("track detail page renders", trackReady);
+  const trackLyrics = await waitFor(`document.body.innerText.includes('Lyrics')`, 8000);
+  check("track detail shows lyrics card", trackLyrics);
+  const trackPlayReady = await waitFor(`Boolean(document.querySelector('button[aria-label="Play song"]'))`, 12000);
+  const trackPlay = trackPlayReady
+    ? await evaluate(`(() => {
+        const btn = document.querySelector('button[aria-label="Play song"]');
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`)
+    : false;
+  const trackPlaying = await waitFor(
+    `(() => { const text = document.querySelector('footer')?.innerText || ''; return text.includes('Blinding Lights'); })()`,
+    15000,
+  );
+  check("track detail starts playback", trackPlay && trackPlaying);
+  await shot("19c-track-detail");
+}
 
 // 7. Mobile player flow.
 await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -478,6 +539,17 @@ const closedNow = await waitFor(
   8000,
 );
 check("mobile player closes", closed && closedNow);
+
+if (trackId) {
+  await open(`/track/${trackId}`, 2500);
+  const mobileTrackReady = await waitFor(
+    `document.body.innerText.includes('Song details') && document.body.innerText.includes('Lyrics')`,
+    25000,
+  );
+  const mobileTrackFits = await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1");
+  check("mobile track page renders", mobileTrackReady && mobileTrackFits);
+  await shot("20c-mobile-track");
+}
 
 console.log("ERRORS:", errors.length);
 for (const error of errors.slice(0, 10)) console.log("ERR", error);

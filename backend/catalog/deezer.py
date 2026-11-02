@@ -149,16 +149,25 @@ def normalize_artist(raw: dict) -> dict:
 
 def normalize_playlist(raw: dict) -> dict:
     owner = raw.get("creator") or raw.get("user") or {}
+    title = raw.get("title") or "Playlist"
     return {
         "id": str(raw.get("id", "")),
         "source": "deezer",
-        "title": raw.get("title") or "Playlist",
+        "title": title,
+        # The frontend playlist contract uses `name` and an owner object,
+        # matching locally-created playlists. Keep `title` as an alias for the
+        # Deezer-shaped search payload.
+        "name": title,
         "description": raw.get("description") or "",
         "cover": _image(raw, "picture_xl", "picture_big", "picture_medium", "picture"),
         "cover_small": _image(raw, "picture_small", "picture_medium", "picture"),
         "nb_tracks": raw.get("nb_tracks") or raw.get("nb_songs") or 0,
         "duration": raw.get("duration") or 0,
-        "owner": owner.get("name") or "Deezer",
+        "owner": {
+            "id": owner.get("id"),
+            "name": owner.get("name") or "Deezer",
+            "avatar": _image(owner, "picture_xl", "picture_big", "picture_medium", "picture"),
+        },
         "is_editorial": True,
     }
 
@@ -271,10 +280,10 @@ def get_playlist(playlist_id: int | str) -> dict:
     raw = get_json(f"playlist/{playlist_id}", ttl=1800)
     playlist = normalize_playlist(raw)
     tracks = []
-    for item in raw.get("tracks", {}).get("data", []):
+    for position, item in enumerate(raw.get("tracks", {}).get("data", [])):
         track = normalize_track(item)
         if track["preview"]:
-            tracks.append(track)
+            tracks.append({"position": position, "track": track})
     playlist["tracks"] = tracks
     playlist["nb_tracks"] = len(tracks) or playlist["nb_tracks"]
     return playlist

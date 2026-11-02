@@ -2,18 +2,43 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Clock, Play, Search as SearchIcon, TrendingUp, X } from "lucide-react";
 import { api } from "@/lib/api";
-import type { Artist, Genre, SearchResults, Track } from "@/lib/types";
+import type { Album, Artist, Genre, Playlist, SearchResults, Track } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
 import { MediaCard } from "@/components/music/MediaCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/store/auth";
 import { usePlayerStore } from "@/store/player";
 import { useUiStore } from "@/store/ui";
-import { gradientFromString, timeAgo } from "@/lib/utils";
+import { cn, gradientFromString, timeAgo } from "@/lib/utils";
+
+type SearchType = "all" | "track" | "artist" | "album" | "playlist";
+
+const searchTabs: { id: SearchType; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "track", label: "Songs" },
+  { id: "artist", label: "Artists" },
+  { id: "album", label: "Albums" },
+  { id: "playlist", label: "Playlists" },
+];
+
+function normalizeTypedResults(data: SearchResults, type: Exclude<SearchType, "all">): SearchResults {
+  const items = data.items || [];
+  return {
+    ...data,
+    tracks: type === "track" ? (items as Track[]) : [],
+    artists: type === "artist" ? (items as Artist[]) : [],
+    albums: type === "album" ? (items as Album[]) : [],
+    playlists: type === "playlist" ? (items as Playlist[]) : [],
+  };
+}
 
 export function SearchPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const query = params.get("q")?.trim() || "";
+  const requestedType = params.get("type") || "all";
+  const type: SearchType = searchTabs.some((tab) => tab.id === requestedType)
+    ? (requestedType as SearchType)
+    : "all";
   const user = useAuthStore((state) => state.user);
   const toast = useUiStore((state) => state.toast);
   const playContext = usePlayerStore((state) => state.playContext);
@@ -41,16 +66,20 @@ export function SearchPage() {
     }
     let alive = true;
     setLoading(true);
+    setResults(null);
     api
-      .search(query, "all")
-      .then((data) => alive && setResults(data))
+      .search(query, type, type === "all" ? 20 : 30)
+      .then((data) => {
+        if (!alive) return;
+        setResults(type === "all" ? data : normalizeTypedResults(data, type));
+      })
       .catch((error) => alive && toast(error?.message || "Search is unavailable right now.", "error"))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, type]);
 
   const top = useMemo(() => {
     if (!results) return null;
@@ -60,6 +89,15 @@ export function SearchPage() {
     if (track) return { kind: "track" as const, item: track };
     return null;
   }, [results]);
+
+  const hasResults = Boolean(
+    results?.tracks?.length || results?.artists?.length || results?.albums?.length || results?.playlists?.length,
+  );
+  const topHref = top
+    ? top.kind === "artist"
+      ? `/artist/${(top.item as Artist).id}`
+      : `/track/${(top.item as Track).id}`
+    : "";
 
   const topPlay = async () => {
     if (!top) return;
@@ -148,6 +186,30 @@ export function SearchPage() {
         Results for <span className="font-semibold text-white/80">“{query}”</span>
       </div>
 
+      <div className="relative mt-4 flex flex-wrap gap-2">
+        {searchTabs.map((tab) => {
+          const active = type === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                next.set("q", query);
+                if (tab.id === "all") next.delete("type");
+                else next.set("type", tab.id);
+                setParams(next);
+              }}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-xs font-semibold transition",
+                active ? "bg-white text-black" : "bg-white/[0.08] text-white/70 hover:bg-white/[0.14] hover:text-white",
+              )}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
       {loading ? (
         <div className="mt-6 space-y-8">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_1.4fr]">
@@ -171,7 +233,7 @@ export function SearchPage() {
               <section>
                 <h2 className="mb-3 text-lg font-bold">Top result</h2>
                 <div className="group relative overflow-hidden rounded-xl bg-white/[0.05] p-4 transition hover:bg-white/[0.09]">
-                  <div className="flex items-start gap-4">
+                  <Link to={topHref} className="flex items-start gap-4 pr-12">
                     {top.kind === "artist" ? (
                       <img
                         src={(top.item as Artist).picture}
@@ -186,14 +248,14 @@ export function SearchPage() {
                       />
                     )}
                     <div className="min-w-0 pt-1">
-                      <p className="truncate text-2xl font-extrabold leading-tight">
+                      <p className="truncate text-2xl font-extrabold leading-tight hover:underline">
                         {top.kind === "artist" ? (top.item as Artist).name : (top.item as Track).title}
                       </p>
                       <p className="mt-1 text-xs text-white/55">
                         {top.kind === "artist" ? "Artist" : `${(top.item as Track).artist.name} · Song`}
                       </p>
                     </div>
-                  </div>
+                  </Link>
                   <button
                     onClick={() => void topPlay()}
                     className="absolute bottom-4 right-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-black opacity-0 shadow-glow transition hover:scale-105 group-hover:opacity-100 focus-visible:opacity-100"
@@ -212,7 +274,7 @@ export function SearchPage() {
                   <span className="text-[11px] text-white/40">{results.tracks.length} results</span>
                 </div>
                 <TrackList
-                  tracks={results.tracks.slice(0, 5)}
+                  tracks={type === "track" ? results.tracks : results.tracks.slice(0, 5)}
                   context={`Search: ${query}`}
                   showAlbum={false}
                   showHeader={false}
@@ -225,7 +287,7 @@ export function SearchPage() {
             <section className="mt-10">
               <h2 className="mb-3 text-lg font-bold">Artists</h2>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                {results.artists.slice(0, 5).map((artist) => (
+                {(type === "artist" ? results.artists : results.artists.slice(0, 5)).map((artist) => (
                   <MediaCard key={artist.id} item={artist} kind="artist" />
                 ))}
               </div>
@@ -236,7 +298,7 @@ export function SearchPage() {
             <section className="mt-10">
               <h2 className="mb-3 text-lg font-bold">Albums</h2>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                {results.albums.slice(0, 5).map((album) => (
+                {(type === "album" ? results.albums : results.albums.slice(0, 5)).map((album) => (
                   <MediaCard key={album.id} item={album} kind="album" />
                 ))}
               </div>
@@ -247,14 +309,14 @@ export function SearchPage() {
             <section className="mt-10">
               <h2 className="mb-3 text-lg font-bold">Playlists</h2>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                {results.playlists.slice(0, 5).map((playlist) => (
+                {(type === "playlist" ? results.playlists : results.playlists.slice(0, 5)).map((playlist) => (
                   <MediaCard key={playlist.id} item={playlist} kind="playlist" />
                 ))}
               </div>
             </section>
           )}
 
-          {results && !top && (
+          {results && !hasResults && (
             <div className="mt-20 flex flex-col items-center gap-3 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
                 <SearchIcon className="h-7 w-7 text-white/40" />

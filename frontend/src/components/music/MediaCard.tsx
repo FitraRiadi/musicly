@@ -50,7 +50,7 @@ function entityMeta(item: any, kind: EntityKind) {
         title: item.title,
         subtitle: item.artist?.name || "Song",
         image: item.album?.cover || item.cover,
-        href: `/album/${item.album?.id || ""}`,
+        href: `/track/${item.id}`,
         round: false,
       };
   }

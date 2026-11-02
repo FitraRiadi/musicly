@@ -62,7 +62,7 @@ export function QueuePanel() {
                   <Play className="h-3.5 w-3.5 fill-current" />
                 </span>
               </button>
-              <Link to={`/album/${track.album.id}`} className="min-w-0 flex-1">
+              <Link to={`/track/${track.id}`} className="min-w-0 flex-1">
                 <p className="truncate text-sm">{track.title}</p>
                 <p className="truncate text-xs text-white/50">{track.artist.name}</p>
               </Link>

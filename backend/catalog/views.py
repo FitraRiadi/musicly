@@ -234,6 +234,40 @@ class SearchView(APIView):
         return ok(result)
 
 
+class SearchSuggestView(APIView):
+    """Lightweight, non-persisted search suggestions for the topbar.
+
+    Search results intentionally record recent searches. Autocomplete must not,
+    otherwise every debounced keystroke would pollute the user's history.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        query = (request.query_params.get("q") or "").strip()
+        if len(query) < 2:
+            return ok({"query": query, "tracks": [], "albums": [], "artists": [], "playlists": []})
+        try:
+            limit = max(3, min(int(request.query_params.get("limit", 6)), 10))
+        except ValueError:
+            limit = 6
+        try:
+            result = deezer.search(query, kind="all", limit=limit)
+        except deezer.DeezerError as exc:
+            return catalog_error(exc)
+        tracks = result.get("tracks", [])[: min(limit, 4)]
+        attach_local_audio(tracks, request.user if request.user.is_authenticated else None)
+        return ok(
+            {
+                "query": query,
+                "tracks": tracks,
+                "artists": result.get("artists", [])[:3],
+                "albums": result.get("albums", [])[:2],
+                "playlists": result.get("playlists", [])[:2],
+            }
+        )
+
+
 class RecentSearchView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -478,7 +512,7 @@ class DeezerPlaylistView(APIView):
         except deezer.DeezerError as exc:
             return catalog_error(exc)
         user = request.user if request.user.is_authenticated else None
-        attach_local_audio(playlist["tracks"], user)
+        attach_local_audio([entry["track"] for entry in playlist.get("tracks", [])], user)
         return ok(playlist)
 
 
