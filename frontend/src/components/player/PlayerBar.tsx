@@ -113,22 +113,12 @@ export function PlayerBar() {
             <Link to={`/album/${track.album.id}`} className="block truncate text-sm font-medium hover:underline">
               {track.title}
             </Link>
-            <div className="flex items-center gap-2">
-              <Link
-                to={`/artist/${track.artist.id}`}
-                className="min-w-0 truncate text-xs text-white/55 hover:text-white hover:underline"
-              >
-                {track.artist.name}
-              </Link>
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
-                  track.has_full_audio ? "bg-primary/15 text-primary" : "bg-white/10 text-white/40",
-                )}
-              >
-                {track.has_full_audio ? "Full track" : "Preview 30s"}
-              </span>
-            </div>
+            <Link
+              to={`/artist/${track.artist.id}`}
+              className="block min-w-0 truncate text-xs text-white/55 hover:text-white hover:underline"
+            >
+              {track.artist.name}
+            </Link>
           </div>
           <LikeButton track={track} />
         </div>

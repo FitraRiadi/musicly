@@ -127,14 +127,6 @@ export function LyricsPanel() {
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">Lyrics</p>
             <h2 className="mt-0.5 truncate text-sm font-bold">{track.title}</h2>
             <p className="truncate text-xs text-white/50">{track.artist.name}</p>
-            <p
-              className={cn(
-                "mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
-                track.has_full_audio ? "bg-primary/15 text-primary" : "bg-white/10 text-white/45",
-              )}
-            >
-              {track.has_full_audio ? "Full track" : "Preview 30s"}
-            </p>
           </div>
         </div>
         <button

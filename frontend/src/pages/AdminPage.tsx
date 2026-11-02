@@ -1231,19 +1231,7 @@ export function AdminPage() {
             <TrackCover track={playingTrack} className="h-12 w-12" />
 
             <div className="min-w-0 flex-1 sm:max-w-[240px]">
-              <div className="flex items-center gap-2">
-                <p className="truncate text-sm font-semibold text-white">{playingTrack.title}</p>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-                    playingTrack.has_audio
-                      ? "bg-primary/15 text-primary"
-                      : "bg-white/[0.08] text-white/40",
-                  )}
-                >
-                  {playingTrack.has_audio ? "Full" : "Preview"}
-                </span>
-              </div>
+              <p className="truncate text-sm font-semibold text-white">{playingTrack.title}</p>
               <p className="truncate text-xs text-white/40">
                 {playingTrack.artist_name || "Unknown artist"}
               </p>

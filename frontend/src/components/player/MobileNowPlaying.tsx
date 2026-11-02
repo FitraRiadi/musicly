@@ -63,14 +63,6 @@ export function MobileNowPlaying() {
               <Link to={`/artist/${track.artist.id}`} className="mt-1 block truncate text-base text-white/70">
                 {track.artist.name}
               </Link>
-              <span
-                className={cn(
-                  "mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                  track.has_full_audio ? "bg-primary/15 text-primary" : "bg-white/10 text-white/50",
-                )}
-              >
-                {track.has_full_audio ? "Full track" : "Preview 30s"}
-              </span>
             </div>
             <LikeButton track={track} />
           </div>
