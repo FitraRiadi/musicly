@@ -140,6 +140,9 @@ CACHES = {
 
 DEEZER_API = os.getenv("DEEZER_API", "https://api.deezer.com")
 LRCLIB_API = os.getenv("LRCLIB_API", "https://lrclib.net/api")
+# Local ytmp3 scraper used for on-demand full-track streaming. Leave empty to
+# disable it and fall back to 30-second Deezer previews only.
+YTMP3_API = os.getenv("YTMP3_API", "http://127.0.0.1:8137")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 LOGGING = {

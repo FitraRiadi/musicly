@@ -112,7 +112,7 @@ export function DashboardPage() {
               <span className="text-base font-semibold text-white/40">{stat.suffix}</span>
             </p>
             <p className="mt-1.5 text-[10px] text-white/30">
-              {stat.label === "Minutes listened" ? "Across 30-second previews" : "All time"}
+              {stat.label === "Minutes listened" ? "Across streamed tracks" : "All time"}
             </p>
           </div>
         ))}

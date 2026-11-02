@@ -59,7 +59,7 @@ export function AuthLayout({
             <Headphones className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold">30-second previews, zero setup.</p>
+            <p className="text-sm font-semibold">Full-length streaming, zero setup.</p>
             <p className="text-xs text-white/45">Tap play on any song and Musicly streams instantly.</p>
           </div>
           <CheckCircle2 className="ml-auto h-5 w-5 text-primary" />

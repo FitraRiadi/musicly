@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import mimetypes
 import re
 import time
@@ -22,7 +23,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.serializers import UserSerializer
 
-from . import deezer, lyrics
+from . import deezer, lyrics, streaming
 from .curation import SPOTLIGHT_ARTISTS, SPOTLIGHT_SUBTITLE, SPOTLIGHT_TITLE
 from .models import (
     FollowedArtist,
@@ -42,6 +43,9 @@ from .serializers import (
     serialize_track,
     track_from_payload,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def ok(data, status_code=status.HTTP_200_OK):
@@ -303,25 +307,49 @@ def _range_not_satisfiable(size: int) -> Response:
 
 
 class TrackStreamView(APIView):
-    """Serve a locally stored full track with HTTP Range support.
+    """Serve a full track with HTTP Range support.
 
-    Preview-only tracks never hit this view; the player falls back to the
-    Deezer preview URL. Authentication is intentionally not required because
-    the browser's <audio> element cannot attach the JWT header and tracks in
-    this app are a public listening catalog.
+    A licensed local file wins when it exists. Otherwise the track is resolved
+    through the local ytmp3 scraper and proxied on demand, without writing any
+    audio to disk. If the scraper is disabled or cannot find the song, the
+    browser is redirected to the 30-second Deezer preview as a fallback.
+
+    Authentication is intentionally not required because the browser's <audio>
+    element cannot attach the JWT header and tracks in this app are a public
+    listening catalog.
     """
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    def _remote_stream(self, track: Track, request):
+        response = streaming.stream_response(track, request)
+        if response is not None:
+            return response
+        logger.info("Falling back to Deezer preview for track %s", track.deezer_id)
+        return HttpResponseRedirect(f"/tracks/{track.pk}/preview/")
+
     def get(self, request, track_id):
+        raw = str(track_id)
+        deezer_only = raw.startswith("dz-")
+        numeric = raw[3:] if deezer_only else raw
+
         track = None
-        if str(track_id).isdigit():
-            track = Track.objects.filter(pk=track_id).first()
+        if numeric.isdigit():
+            if deezer_only:
+                track = Track.objects.filter(deezer_id=int(numeric)).first()
+            else:
+                track = Track.objects.filter(pk=numeric).first()
+                if track is None:
+                    track = Track.objects.filter(deezer_id=int(numeric)).first()
         if track is None:
-            track = Track.objects.filter(deezer_id=track_id).first()
-        if track is None or not track.audio_file:
-            raise Http404("No local audio is available for this track.")
+            try:
+                track = resolve_track(numeric)
+            except deezer.DeezerError as exc:
+                raise Http404("Track not found.") from exc
+
+        if not track.audio_file:
+            return self._remote_stream(track, request)
 
         field = track.audio_file
         try:

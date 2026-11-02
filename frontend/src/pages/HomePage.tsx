@@ -153,10 +153,11 @@ export function HomePage() {
       <footer className="mt-14 border-t border-white/[0.06] pt-6 text-[11px] leading-relaxed text-white/35">
         <p className="font-semibold text-white/50">Musicly — a Spotify-inspired listening experience.</p>
         <p className="mt-1 max-w-2xl">
-          Catalog metadata, artwork and 30-second previews are provided by the public Deezer API. This is a clone built
+          Catalog metadata and artwork are provided by the public Deezer API. Full playback streams on demand through
+          the local YouTube bridge, with 30-second Deezer previews as the fallback. This is a clone built
           for learning, not affiliated with Spotify or Deezer.
         </p>
-        <p className={cn("mt-3", "text-white/25")}>© {new Date().getFullYear()} Musicly. All previews belong to their respective owners.</p>
+        <p className={cn("mt-3", "text-white/25")}>© {new Date().getFullYear()} Musicly. All music belongs to their respective owners.</p>
       </footer>
     </div>
   );

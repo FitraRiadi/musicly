@@ -215,7 +215,7 @@ export function LyricsPanel() {
         ) : data && !data.available ? (
           "No lyrics are stored for this track"
         ) : track.has_full_audio ? (
-          "Lyrics follow the full track"
+          "Lyrics follow the playing track"
         ) : (
           "Synced lyrics follow the full song; you are hearing a 30-second preview"
         )}

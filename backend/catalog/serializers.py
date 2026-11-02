@@ -1,12 +1,31 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from .models import FollowedArtist, LikedTrack, PlayHistory, Playlist, PlaylistTrack, Track
+
+
+def _stream_enabled() -> bool:
+    return bool((getattr(settings, "YTMP3_API", "") or "").strip())
 
 
 def serialize_track(track: Track, user=None) -> dict:
     liked = False
     if user is not None and user.is_authenticated:
         liked = LikedTrack.objects.filter(user=user, track=track).exists()
+
+    has_local = bool(track.audio_file)
+    can_stream = has_local or _stream_enabled()
+    if has_local:
+        stream_url = f"/tracks/{track.pk}/stream/"
+        audio_source = "local"
+    elif can_stream:
+        # The stream view resolves the Deezer id to a YouTube video on demand.
+        stream_url = f"/tracks/dz-{track.deezer_id}/stream/"
+        audio_source = "youtube"
+    else:
+        stream_url = ""
+        audio_source = "preview"
+
     return {
         "id": str(track.deezer_id),
         "deezer_id": track.deezer_id,
@@ -16,9 +35,9 @@ def serialize_track(track: Track, user=None) -> dict:
         # Cached Deezer preview URLs are signed and expire, so playback goes
         # through a small endpoint that refreshes them on demand.
         "preview": f"/tracks/{track.pk}/preview/",
-        "has_full_audio": bool(track.audio_file),
-        "stream_url": f"/tracks/{track.pk}/stream/" if track.audio_file else "",
-        "audio_source": "local" if track.audio_file else "preview",
+        "has_full_audio": can_stream,
+        "stream_url": stream_url,
+        "audio_source": audio_source,
         "explicit": track.explicit,
         "rank": 0,
         "release_date": track.release_date,
@@ -63,12 +82,12 @@ def track_from_payload(payload: dict) -> Track:
 
 
 def attach_local_audio(tracks: list[dict], user=None) -> list[dict]:
-    """Attach local-audio and like state to normalized Deezer track payloads.
+    """Attach playable stream and like state to normalized Deezer track payloads.
 
     Search, album, artist, chart and Deezer-playlist endpoints return upstream
     payloads rather than ORM rows. Without this pass, a track with an uploaded
-    full file would still play its 30-second preview when opened from those
-    screens.
+    file or an available ytmp3 stream would still play its 30-second preview
+    when opened from those screens.
     """
     if not tracks:
         return tracks
@@ -97,9 +116,19 @@ def attach_local_audio(tracks: list[dict], user=None) -> list[dict]:
             continue
         row = rows.get(deezer_id)
         has_audio = bool(row and row.audio_file)
-        track["has_full_audio"] = has_audio
-        track["stream_url"] = f"/tracks/{row.pk}/stream/" if has_audio else ""
-        track["audio_source"] = "local" if has_audio else "preview"
+        if has_audio:
+            stream_url = f"/tracks/{row.pk}/stream/"
+            audio_source = "local"
+        elif _stream_enabled():
+            # No uploaded file yet: resolve this Deezer id through the scraper.
+            stream_url = f"/tracks/dz-{deezer_id}/stream/"
+            audio_source = "youtube"
+        else:
+            stream_url = ""
+            audio_source = "preview"
+        track["has_full_audio"] = bool(stream_url)
+        track["stream_url"] = stream_url
+        track["audio_source"] = audio_source
         track["liked"] = deezer_id in liked_ids
     return tracks
 

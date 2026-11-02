@@ -1,6 +1,6 @@
 # Musicly
 
-A full-stack Spotify-style music app with a Deezer-powered catalog, 30-second previews, optional licensed full-track uploads, synced lyrics, playlists, listening analytics, and a custom staff dashboard.
+A full-stack Spotify-style music app with a Deezer-powered catalog, on-demand full-track streaming, 30-second previews as a fallback, optional licensed uploads, synced lyrics, playlists, listening analytics, and a custom staff dashboard.
 
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![Django](https://img.shields.io/badge/Django-6.1-092e20)
@@ -10,15 +10,15 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, 30-second pr
 ## Features
 
 - **Discover** - personalized greeting, recently played quick picks, charts, an editorial alt and indie spotlight, genre browsing, and live search across tracks, artists, albums, playlists, and genres.
-- **Play** - persistent player with queue, shuffle, repeat, seek, volume, media-session integration, and a full-screen mobile player. Licensed local audio is used when available; otherwise the app falls back to Deezer's 30-second preview.
+- **Play** - persistent player with queue, shuffle, repeat, seek, volume, media-session integration, and a full-screen mobile player. Licensed local audio is used when available; otherwise Musicly streams the full track on demand through an optional local ytmp3 bridge, and falls back to Deezer's 30-second preview when the bridge is unavailable.
 - **Lyrics** - on-demand synced or plain lyrics with active-line highlighting and auto-scroll. Lyrics are cached in PostgreSQL after the first lookup.
 - **Collect** - like songs, create and edit playlists, reorder tracks, and follow artists.
 - **Analytics** - listening totals, minutes, unique tracks, top artists, most-played tracks, and activity charts built with Tremor and Recharts.
-- **Custom admin dashboard** - staff-only dashboard at `/admin` with Tremor KPI cards, catalog health, top tracks, recent uploads, listener analytics, track search and filters, inline preview playback, full-audio upload/removal, and lyrics editing.
+- **Custom admin dashboard** - staff-only dashboard at `/admin` with Tremor KPI cards, catalog health, top tracks, recent uploads, listener analytics, track search and filters, inline playback, full-audio upload/removal, and lyrics editing.
 - **Accounts** - JWT authentication, registration, profile editing, and avatar upload.
 - **PWA and mobile** - installable app shell with offline caching, a desktop sidebar, mobile tab bar, and mobile mini player.
 
-> **Audio licensing:** the app always has a Deezer 30-second preview as a fallback. Full-length playback only works for tracks where an admin has uploaded an audio file they own or are licensed to host. Do not upload copyrighted music without permission.
+> **Audio licensing:** only upload audio you own or are licensed to host. The optional ytmp3 bridge is meant for personal, local development: it resolves Deezer metadata to YouTube audio and streams it without saving files. Respect YouTube's terms and your local copyright law, and never expose the bridge publicly as a redistribution service. Deezer's 30-second preview remains the final fallback.
 
 ## Tech stack
 
@@ -29,6 +29,7 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, 30-second pr
 | Backend | Django 6.1, Django REST Framework, SimpleJWT, django-cors-headers, Whitenoise |
 | Data | PostgreSQL 18, Django ORM |
 | Catalog | Public Deezer API proxied and cached by Django |
+| Full-track stream | Optional local ytmp3 bridge (yt-dlp) proxied by Django with HTTP Range support; no files written |
 | Local audio | Optional uploaded MP3/audio file per track, streamed with HTTP Range support |
 | Lyrics | On-demand LRCLIB lookup plus admin-entered plain or LRC lyrics, cached in PostgreSQL |
 | PWA | vite-plugin-pwa and Workbox |
@@ -39,7 +40,7 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, 30-second pr
 musicly/
   backend/
     accounts/            # registration, login, JWT, profile, avatar
-    catalog/             # Deezer client, models, API views, demo seed
+    catalog/             # Deezer client, streaming bridge, models, API views, demo seed
     musicly/             # Django settings and URL configuration
     manage.py
     requirements.txt
@@ -95,6 +96,24 @@ Copy-Item .env.example .env
 | `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to call the API. |
 | `DEEZER_API` | Deezer API base URL. |
 | `LRCLIB_API` | LRCLIB API base URL. |
+| `YTMP3_API` | Optional local ytmp3 scraper base URL, default `http://127.0.0.1:8137`. Set empty to use Deezer previews only. |
+
+### Optional: full-track streaming
+
+Musicly can stream full songs without downloading them. Start the local ytmp3 scraper so its API listens on `http://127.0.0.1:8137` (see that project's README), then keep `YTMP3_API` pointed at it. Musicly uses two scraper endpoints:
+
+- `POST /api/search` to resolve `artist title` to a YouTube video id.
+- `GET /api/stream/<video_id>` to proxy audio with HTTP `Range` support.
+
+Set `YTMP3_API` to an empty value to disable the bridge; playback then uses Deezer previews only. The first play can take 5-15 seconds while yt-dlp searches and resolves. Musicly caches the video id for 30 days and the scraper caches direct media URLs until shortly before they expire, so later plays are fast.
+
+Playback precedence:
+
+1. Licensed local `audio_file`.
+2. Full stream through the ytmp3 bridge.
+3. 30-second Deezer preview redirect.
+
+The browser -> Musicly -> scraper -> googlevideo path never writes audio to disk. Musicly proxies the stream so the same URL works from another device on your LAN, not just localhost.
 
 Then run migrations, seed demo data, and start Django:
 
@@ -146,12 +165,12 @@ Sign in with that account. Staff users are redirected to the custom dashboard at
 The dashboard includes:
 
 - **Overview** - Tremor KPI cards, catalog health, recent full-audio uploads, most-played tracks, and newest listeners.
-- **Tracks** - search and filter the catalog, play a preview or full track from each row, upload or replace licensed full audio, remove audio, and edit plain or synced lyrics.
+- **Tracks** - search and filter the catalog, play any track from each row, upload or replace licensed full audio, remove audio, and edit plain or synced lyrics.
 - **Listeners** - account list with playlists, likes, and play counts.
 
 The stock Django admin remains available as an emergency model editor at **http://localhost:5173/django-admin/** (or `http://localhost:8000/django-admin/`).
 
-Uploaded audio lives under `MEDIA_ROOT/tracks/` and is served through `GET /api/tracks/<id>/stream/`, which supports HTTP `Range` requests and works with the browser audio element without a JWT header. The serializer returns `has_full_audio`, `audio_source`, and `stream_url`, and the UI labels each player as **Full track** or **Preview 30s**.
+Uploaded audio lives under `MEDIA_ROOT/tracks/` and is served through `GET /api/tracks/<id>/stream/`, which supports HTTP `Range` requests and works with the browser audio element without a JWT header. When no local file exists, `GET /api/tracks/dz-<deezer_id>/stream/` resolves the track through the ytmp3 bridge and proxies it, so the same endpoint serves full playback. The `dz-` prefix avoids collisions with local track primary keys. The serializer returns `has_full_audio`, `audio_source` (`local`, `youtube`, or `preview`), and `stream_url`. If the bridge fails, the stream endpoint redirects to `/api/tracks/<id>/preview/`.
 
 ## Production build
 
@@ -185,7 +204,7 @@ Serve `frontend/dist` from your web server and reverse-proxy `/api`, `/media`, `
 | `GET` | `/api/home/` | Home feed (personalized when authenticated) |
 | `GET` | `/api/search/?q=&type=` | Catalog search |
 | `GET` | `/api/tracks/<id>/` | Track detail |
-| `GET` | `/api/tracks/<id>/stream/` | Stream locally uploaded full audio (supports Range) |
+| `GET` | `/api/tracks/<id>/stream/` | Stream full audio: local file first, then proxied ytmp3 bridge (supports Range) |
 | `GET` | `/api/tracks/<id>/preview/` | Redirect to a fresh Deezer preview when the cached URL has expired |
 | `GET` | `/api/tracks/<id>/lyrics/` | Cached or LRCLIB lyrics |
 | `GET` | `/api/albums/<id>/` | Album with tracks |
@@ -217,7 +236,7 @@ Staff-only dashboard endpoints:
 | `DELETE` | `/api/admin/tracks/<id>/audio/` | Remove uploaded full audio |
 | `GET` | `/api/admin/users/` | Listener list with activity counts |
 
-All user-data endpoints require `Authorization: Bearer <access>`. Catalog, lyrics, preview redirects, and local-audio stream endpoints are public so the browser audio element and guest browsing work without a token. Saved tracks (likes, playlists, history) use the preview redirect endpoint because Deezer signs preview URLs with a short expiry.
+All user-data endpoints require `Authorization: Bearer <access>`. Catalog, lyrics, preview redirects, and both local and remote stream endpoints are public so the browser audio element and guest browsing work without a token. Deezer signs preview URLs with a short expiry, so preview playback always goes through the redirect endpoint.
 
 ## Quality checks
 
@@ -254,6 +273,7 @@ cd backend
 - Start from `backend/.env.example` and `frontend/.env.example`; never commit real credentials.
 - Use a strong, unique `DJANGO_SECRET_KEY` in production.
 - Keep `DJANGO_DEBUG=False` and restrict `DJANGO_ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` in production.
+- Keep the ytmp3 scraper bound to loopback. Musicly proxies it for LAN playback, so the scraper itself never needs to be exposed.
 - Only upload audio you own or are licensed to host.
 
 ## Troubleshooting
@@ -263,6 +283,8 @@ cd backend
 - **API errors or timeouts** - Deezer occasionally drops TLS connections. The client retries; refresh the page or retry the request.
 - **CORS errors** - add your frontend origin to `CORS_ALLOWED_ORIGINS` in `backend/.env`.
 - **PWA not installable** - serve over HTTPS or `localhost`, run a production build, and confirm `dist/sw.js` is served with a JavaScript MIME type.
+- **Full tracks fall back to 30-second previews** - confirm `YTMP3_API` points at a running scraper and that `/api/search` and `/api/stream/<video_id>` respond. The first play can take 5-15 seconds. Check the scraper log for yt-dlp errors.
+- **Wrong song matched** - resolution scores title, artist, and duration, but obscure or remixed tracks can still mismatch. Upload licensed audio or adjust the query/scoring in `backend/catalog/streaming.py`. Restart Django to clear the in-memory video-id cache.
 - **Lyrics unavailable** - LRCLIB may not have the track or the exact-match endpoint can be temporarily unavailable; the app falls back to search. Check the admin row and clear `lyrics checked at` to retry.
 
 ## License
@@ -271,4 +293,4 @@ Released under the [MIT License](LICENSE).
 
 ---
 
-Built as a full-stack portfolio project. Music metadata and previews courtesy of the [Deezer API](https://developers.deezer.com/). Lyrics via [LRCLIB](https://lrclib.net).
+Built as a full-stack portfolio project. Music metadata and previews courtesy of the [Deezer API](https://developers.deezer.com/). Lyrics via [LRCLIB](https://lrclib.net). Full-track streaming is an optional local ytmp3 bridge backed by yt-dlp.

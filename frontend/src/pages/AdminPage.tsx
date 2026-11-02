@@ -431,7 +431,9 @@ export function AdminPage() {
     setPlayerLoading(true);
 
     const source =
-      track.has_audio && track.audio_url ? track.audio_url : `/tracks/${track.id}/preview/`;
+      track.has_audio && track.audio_url
+        ? track.audio_url
+        : `/tracks/dz-${track.deezer_id}/stream/`;
     audio.src = apiUrl(source);
     audio.currentTime = 0;
 
@@ -588,7 +590,8 @@ export function AdminPage() {
               <span className="text-[11px] font-bold uppercase tracking-[0.14em]">Studio tip</span>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-white/50">
-              Upload only audio you have the rights to host. Everything else keeps streaming as a 30-second Deezer preview.
+              Upload only audio you have the rights to host. Tracks without a licensed file stream through the local
+              YouTube bridge, with 30-second Deezer previews as the fallback.
             </p>
           </div>
 
@@ -853,7 +856,8 @@ export function AdminPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-white">Keep the catalog healthy</p>
                       <p className="mt-0.5 text-xs text-white/40">
-                        {overview.stats.with_audio} of {overview.stats.tracks} tracks have a licensed full file. The rest automatically fall back to Deezer previews.
+                        {overview.stats.with_audio} of {overview.stats.tracks} tracks have a licensed full file. The rest
+                        stream through the local YouTube bridge and fall back to Deezer previews when unavailable.
                       </p>
                     </div>
                     <Button size="sm" onClick={() => setSection("tracks")}>
@@ -960,7 +964,7 @@ export function AdminPage() {
                                   )}
                                   aria-label={isCurrentPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
                                   aria-pressed={isCurrentPlaying}
-                                  title={track.has_audio ? "Play full track" : "Play 30-second preview"}
+                                  title="Play full track"
                                 >
                                   {isCurrentTrack && playerLoading ? (
                                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -330,7 +330,8 @@ export function SearchPage() {
 
           <div className="mt-12 rounded-xl border border-white/[0.06] bg-white/[0.03] p-4 text-xs text-white/40">
             <TrendingUp className="mr-1.5 inline h-3.5 w-3.5" />
-            Search is powered by the public Deezer catalog — every result plays a 30 second preview.
+            Search is powered by the public Deezer catalog. Full playback streams on demand through the local
+            YouTube bridge; 30-second Deezer previews are the fallback.
           </div>
         </>
       )}
