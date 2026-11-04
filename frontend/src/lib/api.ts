@@ -195,7 +195,7 @@ export const api = {
   adminSession: () => request<{ ok: boolean }>("/auth/admin-session/", { method: "POST" }),
   adminLogout: () => request<void>("/auth/admin-session/", { method: "DELETE" }),
   me: () => request<User>("/auth/me/"),
-  updateMe: (payload: Partial<Pick<User, "display_name" | "bio">> | FormData) => {
+  updateMe: (payload: Partial<Pick<User, "display_name" | "bio" | "banner">> | FormData) => {
     const isForm = payload instanceof FormData;
     return request<User>("/auth/me/", {
       method: "PATCH",

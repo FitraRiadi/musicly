@@ -158,7 +158,7 @@ export function UserProfilePage() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-[radial-gradient(ellipse_at_top,rgba(30,215,96,0.12),transparent_65%)]" />
 
       <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-ink-850 shadow-2xl">
-        <ProfileBanner seed={user.username} />
+        <ProfileBanner seed={user.username} image={user.banner || undefined} />
         <div className="relative -mt-16 px-4 pb-5 sm:-mt-20 sm:px-6">
           <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-end">
             <Avatar className="h-32 w-32 shadow-2xl ring-4 ring-[#0b0b0b] sm:h-40 sm:w-40">

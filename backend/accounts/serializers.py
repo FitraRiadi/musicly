@@ -12,6 +12,13 @@ def avatar_url(user: User, request=None):
     return request.build_absolute_uri(url) if request else url
 
 
+def banner_url(user: User, request=None):
+    if not user.banner:
+        return None
+    url = user.banner.url
+    return request.build_absolute_uri(url) if request else url
+
+
 def friends_count(user: User) -> int:
     return (
         Friendship.objects.filter(status=Friendship.Status.ACCEPTED)
@@ -50,6 +57,7 @@ def serialize_public_user(user: User, request=None, current_user=None) -> dict:
         "display_name": user.display_name,
         "bio": user.bio,
         "avatar": avatar_url(user, request),
+        "banner": banner_url(user, request),
         "created_at": user.created_at,
         "friends_count": friends_count(user),
         "friendship": friendship_state(current_user, user),
@@ -76,16 +84,29 @@ def serialize_badge(badge: Badge, *, earned_at=None, value: int = 0) -> dict:
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.CharField(read_only=True)
     avatar = serializers.ImageField(required=False, allow_null=True)
+    banner = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "name", "display_name", "bio", "avatar", "is_staff", "created_at"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "name",
+            "display_name",
+            "bio",
+            "avatar",
+            "banner",
+            "is_staff",
+            "created_at",
+        ]
         read_only_fields = ["id", "username", "email", "is_staff", "created_at", "name"]
 
 
 class PublicUserSerializer(serializers.ModelSerializer):
     name = serializers.CharField(read_only=True)
     avatar = serializers.SerializerMethodField()
+    banner = serializers.SerializerMethodField()
     friends_count = serializers.SerializerMethodField()
     friendship = serializers.SerializerMethodField()
 
@@ -98,6 +119,7 @@ class PublicUserSerializer(serializers.ModelSerializer):
             "display_name",
             "bio",
             "avatar",
+            "banner",
             "created_at",
             "friends_count",
             "friendship",
@@ -105,6 +127,9 @@ class PublicUserSerializer(serializers.ModelSerializer):
 
     def get_avatar(self, obj: User):
         return avatar_url(obj, self.context.get("request"))
+
+    def get_banner(self, obj: User):
+        return banner_url(obj, self.context.get("request"))
 
     def get_friends_count(self, obj: User):
         return friends_count(obj)

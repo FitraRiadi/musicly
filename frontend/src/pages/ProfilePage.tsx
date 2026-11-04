@@ -6,10 +6,11 @@ import {
   Check,
   Download,
   Heart,
+  ImagePlus,
   ListMusic,
+  Loader2,
   LogOut,
   Music2,
-  Save,
   Search,
   Trophy,
   UserCheck,
@@ -42,6 +43,7 @@ export function ProfilePage() {
   const toast = useUiStore((state) => state.toast);
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const bannerFileRef = useRef<HTMLInputElement | null>(null);
   const { canInstall, promptInstall } = useInstallPrompt();
 
   const [profile, setProfile] = useState<User | null>(currentUser);
@@ -49,9 +51,17 @@ export function ProfilePage() {
   const [displayName, setDisplayName] = useState(currentUser?.display_name || "");
   const [bio, setBio] = useState(currentUser?.bio || "");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [bannerSaving, setBannerSaving] = useState(false);
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const textRef = useRef({ display_name: currentUser?.display_name || "", bio: currentUser?.bio || "" });
+  const textDirtyRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveInFlightRef = useRef(false);
+  const saveQueuedRef = useRef(false);
+  const mutationRef = useRef(0);
   const [friendsData, setFriendsData] = useState<FriendList | null>(null);
   const [badges, setBadges] = useState<BadgeModel[]>([]);
   const [collecting, setCollecting] = useState<string | null>(null);
@@ -72,18 +82,134 @@ export function ProfilePage() {
       .catch(() => undefined);
   };
 
+  const applyTextUpdate = (updated: User) => {
+    mutationRef.current += 1;
+    setProfile((current) =>
+      current
+        ? { ...current, display_name: updated.display_name, bio: updated.bio, name: updated.name }
+        : updated,
+    );
+    const stateUser = useAuthStore.getState().user;
+    if (stateUser) {
+      setUser({ ...stateUser, display_name: updated.display_name, bio: updated.bio, name: updated.name });
+    } else {
+      setUser(updated);
+    }
+  };
+
+  const persistText = async () => {
+    if (!textDirtyRef.current) return;
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true;
+      return;
+    }
+    const payload = { ...textRef.current };
+    saveInFlightRef.current = true;
+    setSaveState("saving");
+    try {
+      const updated = await api.updateMe(payload);
+      const saved = { display_name: updated.display_name || "", bio: updated.bio || "" };
+      applyTextUpdate(updated);
+      const current = textRef.current;
+      const changedDuringRequest =
+        current.display_name !== payload.display_name || current.bio !== payload.bio;
+      if (!changedDuringRequest) {
+        textRef.current = saved;
+        setDisplayName(saved.display_name);
+        setBio(saved.bio);
+        textDirtyRef.current = false;
+        setSaveState("saved");
+      } else {
+        saveQueuedRef.current = true;
+      }
+    } catch (error: any) {
+      setSaveState("error");
+      toast(error?.message || "Could not save your profile.", "error");
+    } finally {
+      saveInFlightRef.current = false;
+      if (saveQueuedRef.current) {
+        saveQueuedRef.current = false;
+        void persistText();
+      }
+    }
+  };
+
+  const flushTextSave = () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (textDirtyRef.current) void persistText();
+  };
+
+  const updateField = (field: "display_name" | "bio", value: string) => {
+    textRef.current = { ...textRef.current, [field]: value };
+    if (field === "display_name") setDisplayName(value);
+    else setBio(value);
+    textDirtyRef.current = true;
+    mutationRef.current += 1;
+    setSaveState("saving");
+  };
+
+  const applyMediaUpdate = (updated: User, field: "avatar" | "banner") => {
+    mutationRef.current += 1;
+    const patch = field === "avatar" ? { avatar: updated.avatar } : { banner: updated.banner };
+    setProfile((current) => (current ? { ...current, ...patch } : updated));
+    const stateUser = useAuthStore.getState().user;
+    if (stateUser) setUser({ ...stateUser, ...patch });
+    else setUser(updated);
+  };
+
   useEffect(() => {
+    const loadVersion = mutationRef.current;
     api
       .profile()
       .then((data) => {
-        setProfile(data.user);
         setStats(data.stats);
-        setDisplayName(data.user.display_name || "");
-        setBio(data.user.bio || "");
+        if (mutationRef.current !== loadVersion) return;
+        setProfile(data.user);
+        if (!textDirtyRef.current) {
+          const text = {
+            display_name: data.user.display_name || "",
+            bio: data.user.bio || "",
+          };
+          textRef.current = text;
+          setDisplayName(text.display_name);
+          setBio(text.bio);
+          setSaveState("saved");
+        }
         setUser(data.user);
       })
       .catch(() => toast("Could not load your profile.", "error"));
     loadSocial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!textDirtyRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void persistText();
+    }, 700);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayName, bio]);
+
+  useEffect(() => {
+    return () => {
+      if (!textDirtyRef.current) return;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      void persistText();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -93,11 +219,61 @@ export function ProfilePage() {
     if (file) setCropFile(file);
   };
 
-  const confirmCrop = (file: File, previewUrl: string) => {
-    setAvatarFile(file);
-    setAvatarPreview(previewUrl);
+  const confirmCrop = async (file: File, previewUrl: string) => {
     setCropFile(null);
-    toast("Photo ready. Save changes to update your profile.", "default");
+    setAvatarPreview(previewUrl);
+    setAvatarSaving(true);
+    try {
+      const form = new FormData();
+      form.append("avatar", file);
+      const updated = await api.updateMe(form);
+      applyMediaUpdate(updated, "avatar");
+      setAvatarPreview(null);
+      toast("Profile photo updated", "success");
+    } catch (error: any) {
+      setAvatarPreview(null);
+      toast(error?.message || "Could not update your profile photo.", "error");
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
+  const uploadBanner = async (file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    setBannerPreview(previewUrl);
+    setBannerSaving(true);
+    try {
+      const form = new FormData();
+      form.append("banner", file);
+      const updated = await api.updateMe(form);
+      applyMediaUpdate(updated, "banner");
+      setBannerPreview(null);
+      toast("Profile banner updated", "success");
+    } catch (error: any) {
+      setBannerPreview(null);
+      toast(error?.message || "Could not update your profile banner.", "error");
+    } finally {
+      setBannerSaving(false);
+    }
+  };
+
+  const pickBanner = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void uploadBanner(file);
+  };
+
+  const removeBanner = async () => {
+    setBannerSaving(true);
+    try {
+      const updated = await api.updateMe({ banner: null });
+      applyMediaUpdate(updated, "banner");
+      toast("Profile banner removed", "success");
+    } catch (error: any) {
+      toast(error?.message || "Could not remove your profile banner.", "error");
+    } finally {
+      setBannerSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -106,34 +282,11 @@ export function ProfilePage() {
     };
   }, [avatarPreview]);
 
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setSaving(true);
-    try {
-      let updated: User;
-      if (avatarFile) {
-        const form = new FormData();
-        form.append("display_name", displayName);
-        form.append("bio", bio);
-        form.append("avatar", avatarFile);
-        updated = await api.updateMe(form);
-      } else {
-        updated = await api.updateMe({ display_name: displayName, bio });
-      }
-      setProfile(updated);
-      setUser(updated);
-      setDisplayName(updated.display_name || "");
-      setBio(updated.bio || "");
-      setAvatarFile(null);
-      setAvatarPreview(null);
-      setCropFile(null);
-      toast("Profile updated", "success");
-    } catch (error: any) {
-      toast(error?.message || "Could not save your profile.", "error");
-    } finally {
-      setSaving(false);
-    }
-  };
+  useEffect(() => {
+    return () => {
+      if (bannerPreview) URL.revokeObjectURL(bannerPreview);
+    };
+  }, [bannerPreview]);
 
   const handleLogout = () => {
     logout();
@@ -192,7 +345,40 @@ export function ProfilePage() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[radial-gradient(ellipse_at_top,rgba(30,215,96,0.12),transparent_65%)]" />
 
       <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-ink-850 shadow-2xl">
-        <ProfileBanner seed={user?.username || "musicly"} />
+        <ProfileBanner seed={user?.username || "musicly"} image={bannerPreview || user?.banner || undefined} />
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-2 sm:right-4 sm:top-4">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-8 gap-1.5 bg-black/45 px-3 text-xs backdrop-blur-md hover:bg-black/65"
+            onClick={() => bannerFileRef.current?.click()}
+            disabled={bannerSaving}
+          >
+            {bannerSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+            {bannerSaving ? "Uploading…" : "Change banner"}
+          </Button>
+          {user?.banner && !bannerPreview && !bannerSaving && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-8 w-8 bg-black/45 p-0 backdrop-blur-md hover:bg-black/65"
+              onClick={() => void removeBanner()}
+              aria-label="Remove profile banner"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <input
+            ref={bannerFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            aria-label="Upload profile banner"
+            onChange={pickBanner}
+          />
+        </div>
         <div className="relative -mt-16 px-4 pb-5 sm:-mt-20 sm:px-6">
           <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-end">
             <div className="group relative">
@@ -203,13 +389,23 @@ export function ProfilePage() {
                 </AvatarFallback>
               </Avatar>
               <button
+                type="button"
                 onClick={() => fileRef.current?.click()}
-                className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105"
+                disabled={avatarSaving}
+                className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105 disabled:cursor-wait disabled:hover:scale-100"
                 aria-label="Change profile photo"
+                aria-busy={avatarSaving}
               >
-                <Camera className="h-4 w-4" />
+                {avatarSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
               </button>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickAvatar} />
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                aria-label="Upload profile photo"
+                onChange={pickAvatar}
+              />
             </div>
             <div className="min-w-0 flex-1 pb-1">
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/60">Profile</p>
@@ -379,16 +575,42 @@ export function ProfilePage() {
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card className="border-white/[0.07] bg-white/[0.03]">
           <CardContent className="p-5">
-            <h2 className="text-lg font-bold">Edit profile</h2>
-            <p className="mt-1 text-xs text-white/45">This is how you appear across Musicly.</p>
-            <form onSubmit={save} className="mt-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold">Edit profile</h2>
+                <p className="mt-1 text-xs text-white/45">Changes save automatically as you type.</p>
+              </div>
+              {saveState === "error" ? (
+                <button
+                  type="button"
+                  onClick={flushTextSave}
+                  className="rounded-full border border-red-400/30 bg-red-400/10 px-3 py-1 text-[11px] font-semibold text-red-200 transition hover:bg-red-400/20"
+                >
+                  Couldn&apos;t save · Retry
+                </button>
+              ) : (
+                <span
+                  aria-live="polite"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-3 py-1 text-[11px] font-medium text-white/45"
+                >
+                  {saveState === "saving" ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Check className="h-3 w-3 text-primary" />
+                  )}
+                  {saveState === "saving" ? "Saving…" : "Saved automatically"}
+                </span>
+              )}
+            </div>
+            <div className="mt-5 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="profile-name">Display name</Label>
                   <Input
                     id="profile-name"
                     value={displayName}
-                    onChange={(event) => setDisplayName(event.target.value)}
+                    onChange={(event) => updateField("display_name", event.target.value)}
+                    onBlur={flushTextSave}
                     placeholder={user?.username}
                     maxLength={80}
                   />
@@ -403,7 +625,8 @@ export function ProfilePage() {
                 <Textarea
                   id="profile-bio"
                   value={bio}
-                  onChange={(event) => setBio(event.target.value)}
+                  onChange={(event) => updateField("bio", event.target.value)}
+                  onBlur={flushTextSave}
                   placeholder="Tell listeners a little about your taste…"
                   maxLength={240}
                 />
@@ -413,12 +636,7 @@ export function ProfilePage() {
                 <Label>Email</Label>
                 <Input value={user?.email || ""} disabled />
               </div>
-              <div className="flex justify-end">
-                <Button type="submit" disabled={saving} className="gap-2">
-                  <Save className="h-4 w-4" /> {saving ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </form>
+            </div>
           </CardContent>
         </Card>
 

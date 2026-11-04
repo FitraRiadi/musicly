@@ -32,28 +32,46 @@ function paletteIndex(seed: string) {
   return hash % PALETTES.length;
 }
 
-export function ProfileBanner({ seed = "musicly", className }: { seed?: string; className?: string }) {
+export function ProfileBanner({
+  seed = "musicly",
+  image,
+  className,
+}: {
+  seed?: string;
+  image?: string | null;
+  className?: string;
+}) {
   const palette = PALETTES[paletteIndex(seed || "musicly")];
 
   return (
     <div className={cn("relative h-36 w-full overflow-hidden bg-ink-800 sm:h-52", className)} aria-hidden="true">
-      <div className={cn("absolute inset-0 bg-gradient-to-br", palette.wash)} />
-      <div className={cn("absolute -left-16 -top-24 h-72 w-72 rounded-full blur-[90px]", palette.glow)} />
-      <div className={cn("absolute -right-10 top-0 h-64 w-64 rounded-full blur-[80px]", palette.accent)} />
-      <div className="absolute -bottom-28 left-1/3 h-60 w-60 rounded-full bg-primary/20 blur-[90px]" />
+      {image ? (
+        <>
+          <img src={image} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-transparent to-black/35" />
+        </>
+      ) : (
+        <>
+          <div className={cn("absolute inset-0 bg-gradient-to-br", palette.wash)} />
+          <div className={cn("absolute -left-16 -top-24 h-72 w-72 rounded-full blur-[90px]", palette.glow)} />
+          <div className={cn("absolute -right-10 top-0 h-64 w-64 rounded-full blur-[80px]", palette.accent)} />
+          <div className="absolute -bottom-28 left-1/3 h-60 w-60 rounded-full bg-primary/20 blur-[90px]" />
 
-      <div
-        className="absolute inset-0 opacity-[0.055]"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(255,255,255,.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.9) 1px, transparent 1px)",
-          backgroundSize: "36px 36px",
-        }}
-      />
+          <div
+            className="absolute inset-0 opacity-[0.055]"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.9) 1px, transparent 1px)",
+              backgroundSize: "36px 36px",
+            }}
+          />
 
-      <Disc3 className="absolute -right-8 top-6 h-48 w-48 rotate-12 text-white opacity-[0.07] sm:h-64 sm:w-64" />
-      <Music2 className="absolute bottom-4 left-[42%] h-12 w-12 -rotate-12 text-white opacity-[0.09]" />
-      <div className="absolute right-6 top-5 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/60 backdrop-blur-md">
+          <Disc3 className="absolute -right-8 top-6 h-48 w-48 rotate-12 text-white opacity-[0.07] sm:h-64 sm:w-64" />
+          <Music2 className="absolute bottom-4 left-[42%] h-12 w-12 -rotate-12 text-white opacity-[0.09]" />
+        </>
+      )}
+
+      <div className="absolute left-4 top-4 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/65 backdrop-blur-md sm:left-6 sm:top-5">
         <Sparkles className="h-3 w-3 text-primary" /> Musicly listener
       </div>
 

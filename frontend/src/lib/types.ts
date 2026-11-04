@@ -116,6 +116,7 @@ export interface User {
   display_name: string;
   bio: string;
   avatar: string | null;
+  banner: string | null;
   is_staff: boolean;
   created_at: string;
 }
@@ -139,6 +140,7 @@ export interface PublicUser {
   display_name: string;
   bio: string;
   avatar: string | null;
+  banner: string | null;
   created_at: string;
   friends_count: number;
   friendship: FriendshipState;
