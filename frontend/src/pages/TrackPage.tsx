@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  CheckCircle2,
   Clock3,
   Disc3,
   Download,
   Ellipsis,
   ExternalLink,
+  FileDown,
   Heart,
   ListPlus,
   ListStart,
+  Loader2,
   Music2,
   Pause,
   Play,
@@ -21,7 +24,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { downloadTrack } from "@/lib/download";
+import { downloadTrack as downloadTrackFile } from "@/lib/download";
 import type { Album, Artist, Lyrics, Track } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
 import { MediaCard } from "@/components/music/MediaCard";
@@ -35,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePlayerStore } from "@/store/player";
+import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { useAuthStore } from "@/store/auth";
 import { useUiStore } from "@/store/ui";
@@ -95,6 +99,10 @@ export function TrackPage() {
   const liked = useLibraryStore((state) => state.isLiked(id || ""));
   const toggleLike = useLibraryStore((state) => state.toggleLike);
   const toggleFollow = useLibraryStore((state) => state.toggleFollow);
+  const offlineItems = useDownloadsStore((state) => state.items);
+  const activeDownloads = useDownloadsStore((state) => state.active);
+  const downloadForOffline = useDownloadsStore((state) => state.download);
+  const removeDownload = useDownloadsStore((state) => state.remove);
 
   const [track, setTrack] = useState<Track | null>(null);
   const [album, setAlbum] = useState<Album | null>(null);
@@ -297,12 +305,38 @@ export function TrackPage() {
     }
   };
 
-  const handleDownload = () => {
-    if (!downloadTrack(track)) {
+  const handleDownloadFile = () => {
+    if (!downloadTrackFile(track)) {
       toast("Full audio is not available for this song.", "error");
       return;
     }
     toast("Download started. Check your Downloads folder.", "success");
+  };
+
+  const downloaded = offlineItems.some((item) => item.id === track.id);
+  const activeDownload = activeDownloads[track.id];
+
+  const handleOfflineDownload = async () => {
+    if (downloaded) {
+      try {
+        await removeDownload(track.id);
+        toast("Removed from Downloads", "success");
+      } catch {
+        toast("Could not remove this download.", "error");
+      }
+      return;
+    }
+    if (activeDownload?.status === "downloading") return;
+    if (!track.has_full_audio || !track.stream_url) {
+      toast("Full audio is not available for this song.", "error");
+      return;
+    }
+    try {
+      await downloadForOffline(track);
+      toast("Downloaded. Available offline in Downloads.", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not download this song.", "error");
+    }
   };
 
   return (
@@ -396,6 +430,24 @@ export function TrackPage() {
             <Heart className={cn("h-5 w-5", liked && "fill-current")} />
           </button>
           <button
+            onClick={() => void handleOfflineDownload()}
+            disabled={activeDownload?.status === "downloading"}
+            className={cn(
+              "flex h-10 w-10 items-center justify-center rounded-full border transition hover:bg-white/10 disabled:opacity-60",
+              downloaded ? "border-primary/60 text-primary" : "border-white/20 text-white/70 hover:text-white",
+            )}
+            aria-label={downloaded ? "Remove download" : "Download for offline"}
+            title={downloaded ? "Remove download" : "Download for offline"}
+          >
+            {activeDownload?.status === "downloading" ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : downloaded ? (
+              <CheckCircle2 className="h-5 w-5" />
+            ) : (
+              <Download className="h-5 w-5" />
+            )}
+          </button>
+          <button
             onClick={() => openAddToPlaylist(track)}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white/70 transition hover:bg-white/10 hover:text-white"
             aria-label="Add to playlist"
@@ -434,8 +486,25 @@ export function TrackPage() {
                 <Share2 className="h-4 w-4" /> Copy song link
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleDownload}>
-                <Download className="h-4 w-4" /> Download
+              <DropdownMenuItem
+                onClick={() => void handleOfflineDownload()}
+                disabled={activeDownload?.status === "downloading"}
+              >
+                {activeDownload?.status === "downloading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : downloaded ? (
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {activeDownload?.status === "downloading"
+                  ? `Downloading${activeDownload.progress != null ? ` ${Math.round(activeDownload.progress * 100)}%` : "…"}`
+                  : downloaded
+                    ? "Remove download"
+                    : "Download for offline"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDownloadFile}>
+                <FileDown className="h-4 w-4" /> Save audio file
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

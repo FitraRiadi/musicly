@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, apiUrl, getAccessToken } from "@/lib/api";
+import { getOfflineAudio } from "@/lib/offline";
 import type { Track } from "@/lib/types";
 import { shuffleArray } from "@/lib/utils";
 
@@ -69,26 +70,56 @@ function syncMediaSession(track: Track) {
   });
 }
 
+let startRequest = 0;
+let currentOfflineUrl: string | null = null;
+
 export const usePlayerStore = create<PlayerState>((set, get) => {
   const startTrack = (track: Track, autoplay = true) => {
     if (!audio) return;
-    const source =
+    const requestId = ++startRequest;
+    const remoteSource =
       track.has_full_audio && track.stream_url ? apiUrl(track.stream_url) : apiUrl(track.preview);
-    if (!source) {
-      set({ isPlaying: false, buffering: false });
-      return;
-    }
-    audio.src = source;
-    audio.currentTime = 0;
-    set({ duration: track.duration || 30, progress: 0, buffering: true });
-    if (autoplay) {
-      audio
-        .play()
-        .then(() => set({ isPlaying: true }))
-        .catch(() => set({ isPlaying: false, buffering: false }));
-    }
+
+    const activateSource = (source: string, objectUrl: string | null) => {
+      if (requestId !== startRequest) {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        return;
+      }
+      const previousOfflineUrl = currentOfflineUrl;
+      currentOfflineUrl = objectUrl;
+      audio.src = source;
+      audio.currentTime = 0;
+      if (previousOfflineUrl && previousOfflineUrl !== objectUrl) URL.revokeObjectURL(previousOfflineUrl);
+      set({ duration: track.duration || 30, progress: 0, buffering: true });
+      if (autoplay) {
+        audio
+          .play()
+          .then(() => set({ isPlaying: true }))
+          .catch(() => set({ isPlaying: false, buffering: false }));
+      } else {
+        set({ isPlaying: false, buffering: false });
+      }
+    };
+
     syncMediaSession(track);
     reportHistory(track, get().context);
+
+    getOfflineAudio(track.id)
+      .then((blob) => {
+        if (requestId !== startRequest) return;
+        if (blob) {
+          const objectUrl = URL.createObjectURL(blob);
+          activateSource(objectUrl, objectUrl);
+          return;
+        }
+        if (remoteSource) activateSource(remoteSource, null);
+        else set({ isPlaying: false, buffering: false });
+      })
+      .catch(() => {
+        if (requestId !== startRequest) return;
+        if (remoteSource) activateSource(remoteSource, null);
+        else set({ isPlaying: false, buffering: false });
+      });
   };
 
   return {
@@ -277,7 +308,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     clearQueue: () => {
+      startRequest += 1;
       audio?.pause();
+      if (audio && currentOfflineUrl) {
+        const offlineUrl = currentOfflineUrl;
+        currentOfflineUrl = null;
+        audio.removeAttribute("src");
+        audio.load();
+        URL.revokeObjectURL(offlineUrl);
+      }
       set({ queue: [], index: -1, isPlaying: false, progress: 0, duration: 0, context: "", lyricsOpen: false });
     },
 

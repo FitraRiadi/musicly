@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Disc3, Ellipsis, Play, Share2, Shuffle } from "lucide-react";
+import { CheckCircle2, Disc3, Download, Ellipsis, Loader2, Play, Share2, Shuffle } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Album, Artist as ArtistType } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
@@ -11,9 +11,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePlayerStore } from "@/store/player";
+import { useDownloadsStore } from "@/store/downloads";
 import { useUiStore } from "@/store/ui";
 import { formatLongDuration, shuffleArray, yearOf } from "@/lib/utils";
 
@@ -22,6 +24,9 @@ export function AlbumPage() {
   const navigate = useNavigate();
   const toast = useUiStore((state) => state.toast);
   const playContext = usePlayerStore((state) => state.playContext);
+  const downloadMany = useDownloadsStore((state) => state.downloadMany);
+  const offlineItems = useDownloadsStore((state) => state.items);
+  const activeDownloads = useDownloadsStore((state) => state.active);
   const [album, setAlbum] = useState<Album | null>(null);
   const [more, setMore] = useState<Album[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,6 +93,26 @@ export function AlbumPage() {
 
   const tracks = album.tracks || [];
   const totalSeconds = tracks.reduce((sum, track) => sum + track.duration, 0);
+  const downloadedCount = tracks.filter((track) => offlineItems.some((item) => item.id === track.id)).length;
+  const bulkDownloading = tracks.some((track) => activeDownloads[track.id]?.status === "downloading");
+
+  const handleDownloadAlbum = async () => {
+    if (!tracks.length || bulkDownloading) return;
+    const remaining = tracks.length - downloadedCount;
+    if (remaining <= 0) {
+      toast("All songs in this album are already downloaded.", "success");
+      return;
+    }
+    toast(`Downloading ${remaining} ${remaining === 1 ? "song" : "songs"} for offline…`);
+    const result = await downloadMany(tracks);
+    if (result.failed > 0) {
+      toast(`Downloaded ${result.downloaded} songs, ${result.failed} failed.`, "error");
+    } else if (result.downloaded > 0) {
+      toast(`Downloaded ${result.downloaded} ${result.downloaded === 1 ? "song" : "songs"}. Available offline.`, "success");
+    } else {
+      toast("All songs in this album are already downloaded.", "success");
+    }
+  };
 
   return (
     <div className="animate-fade-up pb-12">
@@ -147,6 +172,24 @@ export function AlbumPage() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
+              <DropdownMenuItem
+                onClick={() => void handleDownloadAlbum()}
+                disabled={bulkDownloading || (tracks.length > 0 && downloadedCount === tracks.length)}
+              >
+                {bulkDownloading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : downloadedCount === tracks.length && tracks.length > 0 ? (
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {bulkDownloading
+                  ? "Downloading…"
+                  : downloadedCount === tracks.length && tracks.length > 0
+                    ? "Album downloaded"
+                    : "Download album"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={async () => {
                   try {

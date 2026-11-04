@@ -529,6 +529,9 @@ export function Topbar() {
               <DropdownMenuItem onClick={() => navigate("/liked")}>
                 <Heart className="h-4 w-4" /> Liked songs
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/downloads")}>
+                <Download className="h-4 w-4" /> Downloads
+              </DropdownMenuItem>
               {canInstall && (
                 <DropdownMenuItem onClick={() => void promptInstall()}>
                   <Download className="h-4 w-4" /> Install app

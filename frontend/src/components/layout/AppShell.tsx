@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
+import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import { PlayerBar } from "@/components/player/PlayerBar";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
@@ -11,6 +12,7 @@ import { CreatePlaylistDialog } from "@/components/dialogs/CreatePlaylistDialog"
 import { AddToPlaylistDialog } from "@/components/dialogs/AddToPlaylistDialog";
 import { Toaster } from "@/components/ui/Toaster";
 import { useAuthStore } from "@/store/auth";
+import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { usePlayerStore } from "@/store/player";
 import { useUiStore } from "@/store/ui";
@@ -21,6 +23,7 @@ export function AppShell() {
   const user = useAuthStore((state) => state.user);
   const loadLibrary = useLibraryStore((state) => state.load);
   const resetLibrary = useLibraryStore((state) => state.reset);
+  const loadDownloads = useDownloadsStore((state) => state.load);
   const togglePlay = usePlayerStore((state) => state.togglePlay);
   const next = usePlayerStore((state) => state.next);
   const prev = usePlayerStore((state) => state.prev);
@@ -33,6 +36,10 @@ export function AppShell() {
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    void loadDownloads();
+  }, [loadDownloads]);
 
   useEffect(() => {
     if (user) void loadLibrary();
@@ -97,6 +104,7 @@ export function AppShell() {
       <MobileNowPlaying />
       <CreatePlaylistDialog />
       <AddToPlaylistDialog />
+      <OfflineBanner />
       <Toaster />
     </div>
   );

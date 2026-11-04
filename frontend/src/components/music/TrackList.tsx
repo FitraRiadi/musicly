@@ -3,8 +3,10 @@ import {
   Clock3,
   Download,
   Ellipsis,
+  FileDown,
   ListPlus,
   ListStart,
+  Loader2,
   Music2,
   Pause,
   Play,
@@ -14,6 +16,7 @@ import {
   User,
   Disc3,
   Heart,
+  CheckCircle2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -23,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePlayerStore } from "@/store/player";
+import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { useAuthStore } from "@/store/auth";
 import { useUiStore } from "@/store/ui";
@@ -67,6 +71,10 @@ export function TrackList({
   const toast = useUiStore((state) => state.toast);
   const toggleLike = useLibraryStore((state) => state.toggleLike);
   const user = useAuthStore((state) => state.user);
+  const offlineItems = useDownloadsStore((state) => state.items);
+  const activeDownloads = useDownloadsStore((state) => state.active);
+  const downloadForOffline = useDownloadsStore((state) => state.download);
+  const removeDownload = useDownloadsStore((state) => state.remove);
 
   const currentId = queue[index]?.id;
 
@@ -97,6 +105,30 @@ export function TrackList({
     toast("Download started. Check your Downloads folder.", "success");
   };
 
+  const handleOfflineDownload = async (track: Track) => {
+    const isDownloaded = offlineItems.some((item) => item.id === track.id);
+    if (isDownloaded) {
+      try {
+        await removeDownload(track.id);
+        toast("Removed from Downloads", "success");
+      } catch {
+        toast("Could not remove this download.", "error");
+      }
+      return;
+    }
+    if (activeDownloads[track.id]?.status === "downloading") return;
+    if (!track.has_full_audio || !track.stream_url) {
+      toast("Full audio is not available for this song.", "error");
+      return;
+    }
+    try {
+      await downloadForOffline(track);
+      toast("Downloaded. Available offline in Downloads.", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not download this song.", "error");
+    }
+  };
+
   return (
     <div className={cn("w-full", className)}>
       {showHeader && (
@@ -114,6 +146,8 @@ export function TrackList({
       <div className="flex flex-col">
         {tracks.map((track, i) => {
           const isCurrent = currentId === track.id;
+          const downloaded = offlineItems.some((item) => item.id === track.id);
+          const activeDownload = activeDownloads[track.id];
           return (
             <div
               key={`${track.id}-${i}`}
@@ -162,6 +196,11 @@ export function TrackList({
                     {track.explicit && (
                       <span className="ml-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-white/25 align-middle text-[8px] font-bold text-white/80">
                         E
+                      </span>
+                    )}
+                    {downloaded && (
+                      <span className="ml-1.5 inline-flex align-middle" title="Available offline">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
                       </span>
                     )}
                   </Link>
@@ -238,8 +277,25 @@ export function TrackList({
                     <DropdownMenuItem onClick={() => navigate(`/track/${track.id}`)}>
                       <Music2 className="h-4 w-4" /> Go to song
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => void handleOfflineDownload(track)}
+                      disabled={activeDownload?.status === "downloading"}
+                    >
+                      {activeDownload?.status === "downloading" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : downloaded ? (
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      {activeDownload?.status === "downloading"
+                        ? `Downloading${activeDownload.progress != null ? ` ${Math.round(activeDownload.progress * 100)}%` : "…"}`
+                        : downloaded
+                          ? "Remove download"
+                          : "Download for offline"}
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleDownload(track)}>
-                      <Download className="h-4 w-4" /> Download
+                      <FileDown className="h-4 w-4" /> Save audio file
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => navigate(`/artist/${track.artist.id}`)}>

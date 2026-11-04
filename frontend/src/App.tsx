@@ -10,6 +10,7 @@ import { AlbumPage } from "@/pages/AlbumPage";
 import { ArtistPage } from "@/pages/ArtistPage";
 import { TrackPage } from "@/pages/TrackPage";
 import { LikedSongsPage } from "@/pages/LikedSongsPage";
+import { DownloadsPage } from "@/pages/DownloadsPage";
 import { GenrePage } from "@/pages/GenrePage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -79,6 +80,15 @@ function AppBootstrap({ children }: { children: React.ReactNode }) {
   }, [bootstrap]);
 
   useEffect(() => {
+    const handleOnline = () => {
+      const current = useAuthStore.getState().status;
+      if (current !== "loading") void bootstrap();
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [bootstrap]);
+
+  useEffect(() => {
     document.documentElement.classList.add("dark");
   }, []);
 
@@ -100,6 +110,7 @@ export default function App() {
             <Route path="playlist/:id" element={<PlaylistPage />} />
             <Route path="genre/:id" element={<GenrePage />} />
             <Route path="liked" element={<LikedSongsPage />} />
+            <Route path="downloads" element={<DownloadsPage />} />
             <Route
               path="library"
               element={

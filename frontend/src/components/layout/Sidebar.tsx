@@ -13,6 +13,7 @@ import { Logo } from "@/components/brand/Logo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/auth";
+import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { useUiStore } from "@/store/ui";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
@@ -23,12 +24,14 @@ const navItems = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/search", label: "Search", icon: Search },
   { to: "/library", label: "Your Library", icon: Library },
+  { to: "/downloads", label: "Downloads", icon: Download },
   { to: "/dashboard", label: "Dashboard", icon: BarChart3 },
 ];
 
 export function Sidebar() {
   const user = useAuthStore((state) => state.user);
   const playlists = useLibraryStore((state) => state.playlists);
+  const downloadCount = useDownloadsStore((state) => state.items.length);
   const openCreatePlaylist = useUiStore((state) => state.openCreatePlaylist);
   const { canInstall, promptInstall } = useInstallPrompt();
 
@@ -58,6 +61,11 @@ export function Sidebar() {
                     strokeWidth={isActive ? 2.4 : 2}
                   />
                   {item.label}
+                  {item.to === "/downloads" && downloadCount > 0 && (
+                    <span className="ml-auto rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold tabular-nums text-primary">
+                      {downloadCount}
+                    </span>
+                  )}
                   {item.to === "/dashboard" && !user && (
                     <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white/50">
                       soon
@@ -102,6 +110,21 @@ export function Sidebar() {
               </div>
             </Link>
 
+            <Link
+              to="/downloads"
+              className="group flex items-center gap-3 rounded-lg p-2 transition hover:bg-white/[0.06]"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-[#1ed760] to-[#0a5634]">
+                <Download className="h-5 w-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">Downloads</p>
+                <p className="truncate text-xs text-white/55">
+                  Playlist · {downloadCount > 0 ? `${downloadCount} songs` : "Available offline"}
+                </p>
+              </div>
+            </Link>
+
             {playlists.map((playlist) => (
               <Link
                 key={playlist.id}
@@ -136,7 +159,7 @@ export function Sidebar() {
               <Download className="h-4 w-4 text-primary" /> Install Musicly
             </div>
             <p className="mt-1 text-[11px] leading-snug text-white/55">
-              Add the app to your device for offline artwork and instant access.
+              Add the app to your device for instant access and offline playback.
             </p>
             <Button size="sm" className="mt-2 w-full" onClick={() => void promptInstall()}>
               Install app

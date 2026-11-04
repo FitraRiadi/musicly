@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Home, Library, Search, User } from "lucide-react";
+import { Download, Home, Library, Search, User } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
@@ -8,6 +8,7 @@ const items = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/search", label: "Search", icon: Search },
   { to: "/library", label: "Library", icon: Library },
+  { to: "/downloads", label: "Downloads", icon: Download },
 ];
 
 export function MobileNav() {

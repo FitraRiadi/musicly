@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  CheckCircle2,
   Clock3,
   Database,
+  Download,
   Ellipsis,
   Link2,
+  Loader2,
   Pencil,
   Play,
   Plus,
@@ -36,6 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { usePlayerStore } from "@/store/player";
+import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { useAuthStore } from "@/store/auth";
 import { useUiStore } from "@/store/ui";
@@ -48,6 +52,9 @@ export function PlaylistPage() {
   const toast = useUiStore((state) => state.toast);
   const playContext = usePlayerStore((state) => state.playContext);
   const refreshPlaylists = useLibraryStore((state) => state.refreshPlaylists);
+  const downloadMany = useDownloadsStore((state) => state.downloadMany);
+  const offlineItems = useDownloadsStore((state) => state.items);
+  const activeDownloads = useDownloadsStore((state) => state.active);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
@@ -78,6 +85,26 @@ export function PlaylistPage() {
   const tracks = (playlist?.tracks || []).map((entry) => entry.track);
   const totalSeconds = tracks.reduce((sum, track) => sum + track.duration, 0);
   const isDeezer = playlist?.source === "deezer" || Boolean(id?.startsWith("dz-"));
+  const downloadedCount = tracks.filter((track) => offlineItems.some((item) => item.id === track.id)).length;
+  const bulkDownloading = tracks.some((track) => activeDownloads[track.id]?.status === "downloading");
+
+  const handleDownloadPlaylist = async () => {
+    if (!tracks.length || bulkDownloading) return;
+    const remaining = tracks.length - downloadedCount;
+    if (remaining <= 0) {
+      toast("All songs in this playlist are already downloaded.", "success");
+      return;
+    }
+    toast(`Downloading ${remaining} ${remaining === 1 ? "song" : "songs"} for offline…`);
+    const result = await downloadMany(tracks);
+    if (result.failed > 0) {
+      toast(`Downloaded ${result.downloaded} songs, ${result.failed} failed.`, "error");
+    } else if (result.downloaded > 0) {
+      toast(`Downloaded ${result.downloaded} ${result.downloaded === 1 ? "song" : "songs"}. Available offline.`, "success");
+    } else {
+      toast("All songs in this playlist are already downloaded.", "success");
+    }
+  };
 
   const saveEdit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -236,6 +263,24 @@ export function PlaylistPage() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
+              <DropdownMenuItem
+                onClick={() => void handleDownloadPlaylist()}
+                disabled={bulkDownloading || (tracks.length > 0 && downloadedCount === tracks.length)}
+              >
+                {bulkDownloading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : downloadedCount === tracks.length && tracks.length > 0 ? (
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {bulkDownloading
+                  ? "Downloading…"
+                  : downloadedCount === tracks.length && tracks.length > 0
+                    ? "Playlist downloaded"
+                    : "Download playlist"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={async () => {
                   try {

@@ -11,13 +11,14 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, on-demand fu
 
 - **Discover** - personalized greeting, recently played quick picks, charts, an editorial alt and indie spotlight, genre browsing, and live search across tracks, artists, albums, playlists, and genres.
 - **Play** - persistent player with a drag-to-reorder queue, shuffle, repeat, seek, volume, media-session integration, and a full-screen mobile player. Licensed local audio is used when available; otherwise Musicly streams the full track on demand through an optional local ytmp3 bridge, and falls back to Deezer's 30-second preview when the bridge is unavailable.
-- **Download** - save a full track from the song action menu. Django sends it as an attachment and the browser's download manager chooses the destination, so there is no folder picker and nothing is stored on the server.
+- **Download** - use **Save audio file** from the song action menu. Django sends the full track as an attachment and the browser's download manager chooses the destination, so there is no folder picker and nothing is stored on the server.
+- **Offline downloads** - use **Download for offline** from any song, album, playlist, or Liked Songs page. Musicly stores the audio and track metadata in IndexedDB, lists them on `/downloads`, and plays the local blob before making any stream request. The page includes playback, shuffle, per-track removal, storage totals, and clear-all.
 - **Lyrics** - on-demand synced or plain lyrics with active-line highlighting and auto-scroll. Lyrics are cached in PostgreSQL after the first lookup.
 - **Collect** - like songs, create and edit playlists, reorder tracks, and follow artists.
 - **Analytics** - listening totals, minutes, unique tracks, top artists, most-played tracks, and activity charts built with Tremor and Recharts.
 - **Custom admin dashboard** - staff-only dashboard at `/admin` with Tremor KPI cards, catalog health, top tracks, recent uploads, listener analytics, track search and filters, inline playback, full-audio upload/removal, and lyrics editing.
 - **Accounts** - JWT authentication, registration, profile editing, and avatar upload.
-- **PWA and mobile** - installable app shell with offline caching, a desktop sidebar, mobile tab bar, and mobile mini player.
+- **PWA and mobile** - installable app shell with offline caching, a desktop sidebar, mobile tab bar, mobile mini player, cached profile restoration, and an offline banner that links straight to Downloads.
 
 > **Audio licensing:** only upload audio you own or are licensed to host. The optional ytmp3 bridge is meant for personal, local development: it resolves Deezer metadata to YouTube audio and streams it without saving files. Respect YouTube's terms and your local copyright law, and never expose the bridge publicly as a redistribution service. Deezer's 30-second preview remains the final fallback.
 
@@ -32,6 +33,7 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, on-demand fu
 | Catalog | Public Deezer API proxied and cached by Django |
 | Full-track stream | Optional local ytmp3 bridge (yt-dlp) proxied by Django with HTTP Range support; no files written |
 | Download | Full audio proxied as a `Content-Disposition` attachment; the browser picks the destination and Django never stores a copy |
+| Offline downloads | Audio blobs and metadata persisted in IndexedDB; player prefers the local blob and works without the API or internet |
 | Local audio | Optional uploaded MP3/audio file per track, streamed with HTTP Range support |
 | Lyrics | On-demand LRCLIB lookup plus admin-entered plain or LRC lyrics, cached in PostgreSQL |
 | PWA | vite-plugin-pwa and Workbox |
@@ -51,9 +53,9 @@ musicly/
     scripts/             # headless Chrome visual and flow checks
     src/
       components/        # layout, player, music, dialogs, UI components
-      pages/             # home, search, album, artist, playlist, admin, dashboard
-      store/             # auth, player, library, UI state (Zustand)
-      lib/               # API client, types, utilities
+      pages/             # home, search, album, artist, playlist, downloads, admin, dashboard
+      store/             # auth, player, library, downloads, UI state (Zustand)
+      lib/               # API client, types, offline IndexedDB storage, utilities
     tailwind.config.js   # Tremor theme tokens and chart safelist
     vite.config.ts       # dev proxy and PWA manifest/workbox
 ```
@@ -118,6 +120,8 @@ Playback precedence:
 The browser -> Musicly -> scraper -> googlevideo path never writes audio to disk. Musicly proxies the stream so the same URL works from another device on your LAN, not just localhost.
 
 The **Download** action uses the same source but requests `/api/tracks/<id>/download/`. Django adds an attachment filename such as `Artist - Title.m4a` (or `.mp3` for uploaded local audio) and streams the bytes through. The browser handles the actual save, so the system's default Downloads location is used and Musicly never asks for or hardcodes a folder.
+
+The separate **Download for offline** action requests the same public endpoint but reads the response as a blob and stores it in IndexedDB with the track metadata. The player checks IndexedDB before using a remote stream URL, so downloaded songs keep working when the API, bridge, or internet is unavailable. Browser file downloads and the OS Downloads folder are intentionally separate because a web app cannot read files the browser saved outside its own storage. The `/downloads` page is public and local-only so it still opens when authentication cannot be checked.
 
 Then run migrations, seed demo data, and start Django:
 
@@ -184,6 +188,8 @@ pnpm build        # emits dist/ including sw.js and manifest.webmanifest
 pnpm preview      # local check on http://localhost:4173
 ```
 
+Offline downloads store audio independently of the service worker, but a cold start with no network also needs the precached app shell. The service worker is disabled in `pnpm dev`, so test a full offline reload with `pnpm build` and `pnpm preview` (or an installed PWA).
+
 Backend production checklist:
 
 ```powershell
@@ -209,7 +215,7 @@ Serve `frontend/dist` from your web server and reverse-proxy `/api`, `/media`, `
 | `GET` | `/api/search/?q=&type=` | Catalog search |
 | `GET` | `/api/tracks/<id>/` | Track detail |
 | `GET` | `/api/tracks/<id>/stream/` | Stream full audio: local file first, then proxied ytmp3 bridge (supports Range) |
-| `GET` | `/api/tracks/<id>/download/` | Download full audio as an attachment; browser chooses the destination |
+| `GET` | `/api/tracks/<id>/download/` | Download full audio as an attachment; also fetched into IndexedDB by **Download for offline** |
 | `GET` | `/api/tracks/<id>/preview/` | Redirect to a fresh Deezer preview when the cached URL has expired |
 | `GET` | `/api/tracks/<id>/lyrics/` | Cached or LRCLIB lyrics |
 | `GET` | `/api/albums/<id>/` | Album with tracks |
@@ -288,6 +294,7 @@ cd backend
 - **API errors or timeouts** - Deezer occasionally drops TLS connections. The client retries; refresh the page or retry the request.
 - **CORS errors** - add your frontend origin to `CORS_ALLOWED_ORIGINS` in `backend/.env`.
 - **PWA not installable** - serve over HTTPS or `localhost`, run a production build, and confirm `dist/sw.js` is served with a JavaScript MIME type.
+- **Offline downloads missing** - downloads are stored per browser profile in IndexedDB. Check that site storage is not blocked or cleared, and use the same origin (for example `http://127.0.0.1:5174` and `http://localhost:5174` are different origins) where the songs were downloaded.
 - **Full tracks fall back to 30-second previews** - confirm `YTMP3_API` points at a running scraper and that `/api/search` and `/api/stream/<video_id>` respond. The first play can take 5-15 seconds. Check the scraper log for yt-dlp errors.
 - **Wrong song matched** - resolution scores title, artist, and duration, but obscure or remixed tracks can still mismatch. Upload licensed audio or adjust the query/scoring in `backend/catalog/streaming.py`. Restart Django to clear the in-memory video-id cache.
 - **Lyrics unavailable** - LRCLIB may not have the track or the exact-match endpoint can be temporarily unavailable; the app falls back to search. Check the admin row and clear `lyrics checked at` to retry.

@@ -35,6 +35,7 @@ export default defineConfig({
         shortcuts: [
           { name: "Search music", short_name: "Search", url: "/search" },
           { name: "Your library", short_name: "Library", url: "/library" },
+          { name: "Offline downloads", short_name: "Downloads", url: "/downloads" },
         ],
       },
       workbox: {

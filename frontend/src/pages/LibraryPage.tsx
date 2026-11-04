@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, LayoutGrid, ListMusic, Plus, Search, UserCheck } from "lucide-react";
+import { Heart, Download, LayoutGrid, ListMusic, Plus, Search, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlaylistCover } from "@/components/music/PlaylistCover";
 import { MediaCard } from "@/components/music/MediaCard";
 import { useLibraryStore } from "@/store/library";
+import { useDownloadsStore } from "@/store/downloads";
 import { useUiStore } from "@/store/ui";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ type Filter = "all" | "playlists" | "artists";
 
 export function LibraryPage() {
   const { playlists, followed, liked, loaded, load } = useLibraryStore();
+  const downloadCount = useDownloadsStore((state) => state.items.length);
   const openCreate = useUiStore((state) => state.openCreatePlaylist);
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -30,7 +32,7 @@ export function LibraryPage() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">Your Library</h1>
           <p className="mt-1 text-sm text-white/50">
-            {playlists.length} playlists · {artists.length} artists · {likedTracks.length} liked songs
+            {playlists.length} playlists · {artists.length} artists · {likedTracks.length} liked songs · {downloadCount} downloads
           </p>
         </div>
         <Button onClick={() => openCreate()} className="gap-2">
@@ -82,6 +84,19 @@ export function LibraryPage() {
                 <div>
                   <p className="truncate text-sm font-semibold">Liked Songs</p>
                   <p className="text-xs text-white/55">Playlist · {likedTracks.length} songs</p>
+                </div>
+              </Link>
+
+              <Link
+                to="/downloads"
+                className="group flex flex-col gap-3 rounded-xl bg-gradient-to-br from-[#0b5f3a]/70 to-white/[0.04] p-3 transition hover:from-[#0d7a4a]/80"
+              >
+                <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-gradient-to-br from-[#1ed760] to-[#0a5634]">
+                  <Download className="h-10 w-10 text-white" />
+                </div>
+                <div>
+                  <p className="truncate text-sm font-semibold">Downloads</p>
+                  <p className="text-xs text-white/55">Playlist · {downloadCount} songs</p>
                 </div>
               </Link>
 
@@ -155,7 +170,7 @@ export function LibraryPage() {
           </section>
         )}
 
-        {filter !== "artists" && playlists.length === 0 && likedTracks.length === 0 && loaded && (
+        {filter !== "artists" && playlists.length === 0 && likedTracks.length === 0 && downloadCount === 0 && loaded && (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] py-14 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/5">
               <Search className="h-6 w-6 text-white/40" />

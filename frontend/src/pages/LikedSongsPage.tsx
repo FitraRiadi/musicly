@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Heart, Play, Shuffle } from "lucide-react";
+import { CheckCircle2, Download, Heart, Loader2, Play, Shuffle } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Track } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "@/store/player";
+import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { useUiStore } from "@/store/ui";
 import { formatLongDuration, shuffleArray } from "@/lib/utils";
@@ -17,6 +18,9 @@ export function LikedSongsPage() {
   const likedMap = useLibraryStore((state) => state.liked);
   const toggleLike = useLibraryStore((state) => state.toggleLike);
   const toast = useUiStore((state) => state.toast);
+  const downloadMany = useDownloadsStore((state) => state.downloadMany);
+  const offlineItems = useDownloadsStore((state) => state.items);
+  const activeDownloads = useDownloadsStore((state) => state.active);
 
   useEffect(() => {
     api
@@ -32,6 +36,26 @@ export function LikedSongsPage() {
   }, [likedMap]);
 
   const totalSeconds = tracks.reduce((sum, track) => sum + track.duration, 0);
+  const downloadedCount = tracks.filter((track) => offlineItems.some((item) => item.id === track.id)).length;
+  const bulkDownloading = tracks.some((track) => activeDownloads[track.id]?.status === "downloading");
+
+  const handleDownloadLiked = async () => {
+    if (!tracks.length || bulkDownloading) return;
+    const remaining = tracks.length - downloadedCount;
+    if (remaining <= 0) {
+      toast("All liked songs are already downloaded.", "success");
+      return;
+    }
+    toast(`Downloading ${remaining} ${remaining === 1 ? "song" : "songs"} for offline…`);
+    const result = await downloadMany(tracks);
+    if (result.failed > 0) {
+      toast(`Downloaded ${result.downloaded} songs, ${result.failed} failed.`, "error");
+    } else if (result.downloaded > 0) {
+      toast(`Downloaded ${result.downloaded} ${result.downloaded === 1 ? "song" : "songs"}. Available offline.`, "success");
+    } else {
+      toast("All liked songs are already downloaded.", "success");
+    }
+  };
 
   return (
     <div className="animate-fade-up pb-12">
@@ -71,6 +95,21 @@ export function LikedSongsPage() {
             aria-label="Shuffle liked songs"
           >
             <Shuffle className="h-5 w-5" />
+          </button>
+          <button
+            onClick={() => void handleDownloadLiked()}
+            disabled={!tracks.length || bulkDownloading}
+            className="rounded-full p-2 text-white/60 transition hover:text-white disabled:opacity-40"
+            aria-label={downloadedCount === tracks.length && tracks.length > 0 ? "Liked songs downloaded" : "Download liked songs"}
+            title={downloadedCount === tracks.length && tracks.length > 0 ? "All liked songs downloaded" : "Download liked songs for offline"}
+          >
+            {bulkDownloading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : downloadedCount === tracks.length && tracks.length > 0 ? (
+              <CheckCircle2 className="h-5 w-5 text-primary" />
+            ) : (
+              <Download className="h-5 w-5" />
+            )}
           </button>
         </div>
       </div>
