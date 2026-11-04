@@ -75,6 +75,7 @@ export function Topbar() {
   const logout = useAuthStore((state) => state.logout);
   const resetLibrary = useLibraryStore((state) => state.reset);
   const resetHub = useSongHubStore((state) => state.reset);
+  const hubRoom = useSongHubStore((state) => state.room);
   const toast = useUiStore((state) => state.toast);
   const { canInstall, promptInstall } = useInstallPrompt();
 
@@ -544,7 +545,7 @@ export function Topbar() {
               <DropdownMenuItem onClick={() => navigate("/profile")}>
                 <UserIcon className="h-4 w-4" /> Profile
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/song-hub")}>
+              <DropdownMenuItem onClick={() => navigate(hubRoom ? `/song-hub/${hubRoom.code}` : "/song-hub")}>
                 <Radio className="h-4 w-4" /> Song Hub
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/dashboard")}>

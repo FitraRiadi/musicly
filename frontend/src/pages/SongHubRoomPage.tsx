@@ -49,7 +49,9 @@ import type { SongHubMember } from "@/lib/types";
 
 function FloatingReactions() {
   const reactions = useSongHubStore((state) => state.reactions);
-  const [floating, setFloating] = useState<{ key: number; emoji: string; left: number }[]>([]);
+  const [floating, setFloating] = useState<
+    { key: number; emoji: string; left: number; bottom: number; size: number; rotate: number; drift: number }[]
+  >([]);
   const seen = useRef(0);
 
   useEffect(() => {
@@ -64,7 +66,11 @@ function FloatingReactions() {
     const next = fresh.map((row) => ({
       key: row.id,
       emoji: reactionEmoji(row.emoji),
-      left: 8 + ((row.id * 37) % 76),
+      left: 7 + Math.random() * 82,
+      bottom: 6 + Math.random() * 42,
+      size: 24 + Math.round(Math.random() * 16),
+      rotate: -18 + Math.round(Math.random() * 36),
+      drift: -34 + Math.round(Math.random() * 68),
     }));
     setFloating((current) => [...current, ...next]);
     window.setTimeout(() => {
@@ -73,14 +79,19 @@ function FloatingReactions() {
   }, [reactions]);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-16 z-20 h-56 overflow-hidden">
+    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-2xl">
       {floating.map((row) => (
         <span
           key={row.key}
-          className="animate-reaction-float absolute bottom-0 text-3xl drop-shadow-lg"
-          style={{ left: `${row.left}%` }}
+          className="animate-reaction-float absolute select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]"
+          style={{ left: `${row.left}%`, bottom: `${row.bottom}%`, marginLeft: row.drift }}
         >
-          {row.emoji}
+          <span
+            className="block leading-none"
+            style={{ fontSize: `${row.size}px`, transform: `rotate(${row.rotate}deg)` }}
+          >
+            {row.emoji}
+          </span>
         </span>
       ))}
     </div>
@@ -136,6 +147,7 @@ export function SongHubRoomPage() {
   const [transferTarget, setTransferTarget] = useState<SongHubMember | null>(null);
   const [chatText, setChatText] = useState("");
   const [stickersOpen, setStickersOpen] = useState(false);
+  const [reactionsOpen, setReactionsOpen] = useState(false);
   const [settingsName, setSettingsName] = useState("");
   const [settingsVisibility, setSettingsVisibility] = useState<"public" | "private">("public");
   const [settingsPassword, setSettingsPassword] = useState("");
@@ -262,12 +274,10 @@ export function SongHubRoomPage() {
 
   return (
     <div className="animate-fade-up pb-14 pt-4">
-      <FloatingReactions />
-
       <header className="sticky top-0 z-20 -mx-4 mb-4 border-b border-white/[0.06] bg-ink-850/90 px-4 py-3 backdrop-blur-xl md:-mx-7 md:px-7">
         <div className="flex flex-wrap items-center gap-3">
-          <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Song Hub">
-            <Link to="/song-hub">
+          <Button asChild variant="ghost" size="icon-sm" aria-label="Back to home">
+            <Link to="/">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
@@ -325,8 +335,10 @@ export function SongHubRoomPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.8fr)]">
         <div className="space-y-4">
-          <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.08] via-white/[0.03] to-transparent p-5">
-            <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+          <section className="relative rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.08] via-white/[0.03] to-transparent p-5">
+            <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+              <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+            </div>
             <div className="relative flex flex-col gap-5 sm:flex-row">
               <div className="relative h-40 w-40 shrink-0 overflow-hidden rounded-2xl bg-white/[0.06] shadow-2xl">
                 {track?.album.cover ? (
@@ -423,6 +435,43 @@ export function SongHubRoomPage() {
                   )}
                 </div>
               </div>
+            </div>
+            <FloatingReactions />
+            <div className="absolute -bottom-4 right-5 z-30">
+              <button
+                type="button"
+                onClick={() => setReactionsOpen((open) => !open)}
+                aria-label="Send a reaction"
+                aria-expanded={reactionsOpen}
+                className={cn(
+                  "flex h-10 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold shadow-xl backdrop-blur transition",
+                  reactionsOpen
+                    ? "border-primary/50 bg-primary text-black"
+                    : "border-white/15 bg-ink-850/95 text-white/75 hover:bg-white/10 hover:text-white",
+                )}
+              >
+                <Smile className="h-4 w-4" />
+                <span className="hidden sm:inline">React</span>
+              </button>
+              {reactionsOpen && (
+                <div className="absolute bottom-full right-0 mb-3 flex origin-bottom-right items-center gap-1 rounded-2xl border border-white/10 bg-ink-850/95 p-1.5 shadow-2xl backdrop-blur-xl animate-scale-in xl:bottom-1/2 xl:left-full xl:right-auto xl:mb-0 xl:ml-3 xl:-translate-y-1/2 xl:origin-left">
+                  {SONGHUB_REACTIONS.map((reaction) => (
+                    <button
+                      key={reaction.key}
+                      type="button"
+                      onClick={() => {
+                        setReactionsOpen(false);
+                        void react(reaction.key);
+                      }}
+                      title={`Send ${reaction.label}`}
+                      aria-label={`Send ${reaction.label}`}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl text-xl transition hover:-translate-y-0.5 hover:bg-white/10 active:scale-95"
+                    >
+                      {reaction.emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
 
@@ -718,27 +767,6 @@ export function SongHubRoomPage() {
                   ))}
                 </div>
               )}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-bold">Reactions</h2>
-              <span className="text-[11px] text-white/35">Tap to send</span>
-            </div>
-            <div className="grid grid-cols-5 gap-1.5">
-              {SONGHUB_REACTIONS.map((reaction) => (
-                <button
-                  key={reaction.key}
-                  onClick={() => void react(reaction.key)}
-                  className="group flex flex-col items-center gap-1 rounded-xl border border-white/[0.06] bg-black/20 py-2.5 transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary/[0.08]"
-                >
-                  <span className="text-xl transition group-hover:scale-110">{reaction.emoji}</span>
-                  <span className="text-[9px] font-semibold uppercase tracking-wider text-white/35">
-                    {reaction.label}
-                  </span>
-                </button>
-              ))}
             </div>
           </section>
 

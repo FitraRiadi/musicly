@@ -80,6 +80,11 @@ class Badge(models.Model):
     image_url = models.URLField(max_length=600)
     metric = models.CharField(max_length=40, choices=METRIC_CHOICES)
     threshold = models.PositiveIntegerField(default=1)
+    rarity = models.CharField(
+        max_length=12,
+        choices=(("standard", "Standard"), ("rare", "Rare")),
+        default="standard",
+    )
     sort_order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 

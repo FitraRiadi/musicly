@@ -15,13 +15,14 @@ const items = [
 
 export function MobileNav() {
   const user = useAuthStore((state) => state.user);
-  const inRoom = useSongHubStore((state) => Boolean(state.room));
+  const room = useSongHubStore((state) => state.room);
+  const inRoom = Boolean(room);
   return (
     <nav className="flex h-16 items-stretch justify-around border-t border-white/[0.06] bg-ink-850 pb-safe md:hidden">
       {items.map((item) => (
         <NavLink
           key={item.to}
-          to={item.to}
+          to={item.to === "/song-hub" && room ? `/song-hub/${room.code}` : item.to}
           end={item.end}
           className={({ isActive }) =>
             cn(

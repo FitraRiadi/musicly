@@ -171,10 +171,18 @@ def resolve_video_id(track, *, force: bool = False) -> str:
 
 
 def _open_upstream(video_id: str, range_header: str | None):
-    headers = {"Accept-Encoding": "identity"}
+    headers = {
+        "User-Agent": "Musicly/1.0 (+https://musicly.local)",
+        "Accept": "*/*",
+        "Accept-Encoding": "identity",
+    }
     if range_header:
         headers["Range"] = range_header
-    return SESSION.get(
+    # Audio streams live for minutes, and several can be open at once when a
+    # client switches tracks or preloads the next one. A module-level
+    # requests.Session is not safe to share across those concurrent streaming
+    # responses, so each upstream stream gets its own short-lived session.
+    return requests.get(
         f"{_base()}/api/stream/{video_id}",
         headers=headers,
         stream=True,

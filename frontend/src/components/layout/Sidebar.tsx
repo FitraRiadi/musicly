@@ -50,7 +50,7 @@ export function Sidebar() {
           {navItems.map((item) => (
             <NavLink
               key={item.to}
-              to={item.to}
+              to={item.to === "/song-hub" && hubRoom ? `/song-hub/${hubRoom.code}` : item.to}
               end={item.end}
               className={({ isActive }) =>
                 cn(

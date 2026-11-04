@@ -94,6 +94,8 @@ let currentOfflineUrl: string | null = null;
 let prefetchToken = 0;
 let prefetchedTrackId = "";
 let prefetchedSource = "";
+let activeSource = "";
+let prefetchWhenPlaying: (() => void) | null = null;
 
 function bindAudioElement(element: HTMLAudioElement) {
   element.preload = "auto";
@@ -106,14 +108,30 @@ function bindAudioElement(element: HTMLAudioElement) {
   element.addEventListener("waiting", () => {
     if (element === audio) usePlayerStore.setState({ buffering: true });
   });
+  element.addEventListener("stalled", () => {
+    if (element === audio) usePlayerStore.setState({ buffering: true });
+  });
   element.addEventListener("playing", () => {
-    if (element === audio) usePlayerStore.setState({ buffering: false });
+    if (element !== audio) return;
+    if (!activeSource || element.src !== activeSource) return;
+    usePlayerStore.setState({ buffering: false, isPlaying: true });
+    prefetchWhenPlaying?.();
   });
   element.addEventListener("canplay", () => {
-    if (element === audio) usePlayerStore.setState({ buffering: false });
+    if (element !== audio) return;
+    if (!activeSource || element.src !== activeSource) return;
+    usePlayerStore.setState({ buffering: false });
+  });
+  element.addEventListener("loadedmetadata", () => {
+    if (element !== audio) return;
+    if (!activeSource || element.src !== activeSource) return;
+    if (Number.isFinite(element.duration) && element.duration > 0) {
+      usePlayerStore.setState({ duration: element.duration });
+    }
   });
   element.addEventListener("timeupdate", () => {
     if (element !== audio) return;
+    if (!activeSource || element.src !== activeSource) return;
     usePlayerStore.setState({
       progress: element.currentTime,
       duration:
@@ -123,10 +141,14 @@ function bindAudioElement(element: HTMLAudioElement) {
     });
   });
   element.addEventListener("ended", () => {
-    if (element === audio) usePlayerStore.getState().next(true);
+    if (element !== audio) return;
+    if (!activeSource || element.src !== activeSource) return;
+    usePlayerStore.getState().next(true);
   });
   element.addEventListener("error", () => {
-    if (element === audio) usePlayerStore.setState({ isPlaying: false, buffering: false });
+    if (element !== audio) return;
+    if (!activeSource || element.src !== activeSource) return;
+    usePlayerStore.setState({ isPlaying: false, buffering: false });
   });
 }
 
@@ -157,6 +179,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
    */
   const prefetchNext = () => {
     if (!audio || !standby || standby === audio) return;
+    // Never compete with the current track while it is still opening its
+    // stream. Prefetching is triggered by the `playing` event once audio has
+    // actually started.
+    if (audio.paused || audio.readyState < 2) return;
     const { queue, index, repeat } = get();
     const current = queue[index];
     if (!current) {
@@ -207,6 +233,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     const requestId = ++startRequest;
     const remoteSource = sourceFor(track);
 
+    // Stop the previous stream before resolving the new one. Leaving the old
+    // request open lets it compete with the new stream in the proxy, which is
+    // especially visible when a radio queue starts and immediately prefetches
+    // its next track.
+    audio.pause();
+    if (activeSource) {
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    activeSource = "";
+    set({
+      isPlaying: false,
+      buffering: Boolean(remoteSource),
+      progress: Math.max(0, startAt || 0),
+      duration: track.duration || 30,
+    });
+
     const activateSource = (source: string, objectUrl: string | null) => {
       if (requestId !== startRequest) {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -243,6 +286,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         audio.src = source;
       }
 
+      activeSource = audio.src || source;
       currentOfflineUrl = objectUrl;
       audio.volume = get().muted ? 0 : get().volume;
       const safeStart = Math.max(0, startAt || 0);
@@ -251,12 +295,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       if (autoplay) {
         audio
           .play()
-          .then(() => set({ isPlaying: true }))
-          .catch(() => set({ isPlaying: false, buffering: false }));
+          .then(() => {
+            if (requestId !== startRequest) return;
+            // play() can resolve before any media data is available. Keep the
+            // loading state until the element can actually render audio; the
+            // `playing` event clears it as soon as real playback starts.
+            if (audio.readyState >= 2) set({ isPlaying: true, buffering: false });
+          })
+          .catch(() => {
+            if (requestId === startRequest) set({ isPlaying: false, buffering: false });
+          });
       } else {
         set({ isPlaying: false, buffering: false });
       }
-      prefetchNext();
     };
 
     syncMediaSession(track);
@@ -286,6 +337,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         else set({ isPlaying: false, buffering: false });
       });
   };
+
+  // The `playing` event is a module-level listener, so expose the prefetch
+  // action to it without creating another store subscription.
+  prefetchWhenPlaying = prefetchNext;
 
   return {
     queue: [],
@@ -517,6 +572,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         audio.removeAttribute("src");
         audio.load();
       }
+      activeSource = "";
       if (standby && standby !== audio) {
         standby.pause();
         standby.removeAttribute("src");

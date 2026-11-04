@@ -20,7 +20,9 @@ export function BadgeTile({
         "relative flex flex-col overflow-hidden rounded-xl border p-4 transition",
         badge.earned
           ? "border-primary/25 bg-gradient-to-br from-primary/15 via-white/[0.04] to-transparent"
-          : "border-white/[0.07] bg-white/[0.03]",
+          : badge.rarity === "rare"
+            ? "border-amber-300/20 bg-gradient-to-br from-amber-300/[0.08] via-white/[0.03] to-transparent"
+            : "border-white/[0.07] bg-white/[0.03]",
         compact && "p-3",
       )}
     >
@@ -42,6 +44,11 @@ export function BadgeTile({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="truncate text-sm font-bold">{badge.title}</p>
+            {badge.rarity === "rare" && (
+              <span className="shrink-0 rounded-full bg-amber-300/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">
+                Rare
+              </span>
+            )}
             {badge.earned && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
           </div>
           <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-white/45">

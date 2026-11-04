@@ -165,6 +165,7 @@ export interface Badge {
   image_url: string;
   metric: string;
   threshold: number;
+  rarity: "standard" | "rare";
   value: number;
   progress: number;
   earned: boolean;

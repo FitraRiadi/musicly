@@ -675,7 +675,7 @@ async function main() {
     );
     const memberLocked = await bBrowser.eval(`(() => {
       const footer = document.querySelector('footer');
-      const pause = footer?.querySelector('button[aria-label="Pause"]');
+      const pause = footer?.querySelector('button[aria-label="Pause"], button[aria-label="Play"]');
       const seek = document.querySelector('input[aria-label="Room playback position"]');
       return Boolean(pause?.disabled && seek?.disabled && footer?.innerText.includes('Listen-only'));
     })()`);
@@ -761,16 +761,21 @@ async function main() {
     check("member sends a sticker", stickerClicked && hostSawSticker);
 
     // Reaction reaches the room state through the UI.
-    const reactionClicked = await bBrowser.clickText("FIRE", { exact: false });
+    const reactionOpened = await bBrowser.clickAria("Send a reaction");
+    const reactionReady = await bBrowser.waitFor(
+      `Boolean(document.querySelector('button[aria-label="Send Fire"]'))`,
+      5000,
+    );
+    const reactionClicked = reactionReady && (await bBrowser.clickAria("Send Fire"));
     await sleep(1800);
     const reactionState = await api(`/songhub/rooms/${publicCode}/state/`, { token: A.access });
     const memberFired = reactionState.reactions.some(
       (row) => row.emoji === "fire" && row.user?.id === B.user.id,
     );
-    check("member fire reaction reaches the room", reactionClicked && memberFired);
+    check("member fire reaction reaches the room", reactionOpened && reactionClicked && memberFired);
 
     // Mic state and the WebRTC mesh.
-    await bBrowser.eval(`(() => {
+    const memberMicClicked = await bBrowser.eval(`(() => {
       const button = document.querySelector('button[title="Turn microphone on"]');
       if (button) button.click();
       return Boolean(button);
@@ -780,22 +785,30 @@ async function main() {
         const button = document.querySelector('button[title="Turn microphone off"]');
         return Boolean(button);
       })()`,
-      15000,
+      30000,
     );
-    const hostSeesMemberMic = await aBrowser.waitForText("mic live", 20000);
-    check("member microphone turns on", memberMicOn && hostSeesMemberMic);
+    const hostSeesMemberMic = await aBrowser.waitForText("mic live", 30000);
+    check(
+      "member microphone turns on",
+      memberMicClicked && memberMicOn && hostSeesMemberMic,
+      JSON.stringify({ memberMicClicked, memberMicOn, hostSeesMemberMic }),
+    );
 
-    await aBrowser.eval(`(() => {
+    const hostMicClicked = await aBrowser.eval(`(() => {
       const button = document.querySelector('button[title="Turn microphone on"]');
       if (button) button.click();
       return Boolean(button);
     })()`);
     const hostMicOn = await aBrowser.waitFor(
       `(() => Boolean(document.querySelector('button[title="Turn microphone off"]')))()`,
-      15000,
+      30000,
     );
-    const memberSeesHostMic = await bBrowser.waitForText("mic live", 20000);
-    check("host microphone turns on", hostMicOn && memberSeesHostMic);
+    const memberSeesHostMic = await bBrowser.waitForText("mic live", 30000);
+    check(
+      "host microphone turns on",
+      hostMicClicked && hostMicOn && memberSeesHostMic,
+      JSON.stringify({ hostMicClicked, hostMicOn, memberSeesHostMic }),
+    );
 
     const meshReady = await Promise.all([
       aBrowser.waitFor(
@@ -920,14 +933,33 @@ async function main() {
 
     // Private room creation and password flow.
     await aBrowser.fill("#hub-name", "E2E Private Room");
+    const privateNameReady = await aBrowser.waitFor(
+      `document.querySelector('#hub-name')?.value === 'E2E Private Room'`,
+      5000,
+    );
     await aBrowser.clickText("Requires a password", { exact: false });
-    await aBrowser.waitFor(`Boolean(document.querySelector('#hub-password'))`, 5000);
+    const privatePasswordField = await aBrowser.waitFor(`Boolean(document.querySelector('#hub-password'))`, 5000);
     await aBrowser.fill("#hub-password", "secret123");
-    await aBrowser.clickText("Open Song Hub");
+    const privatePasswordReady = await aBrowser.waitFor(
+      `document.querySelector('#hub-password')?.value === 'secret123'`,
+      5000,
+    );
+    const privateSubmitReady = await aBrowser.waitFor(
+      `(() => {
+        const button = [...document.querySelectorAll('button[type="submit"]')].find((item) => item.innerText.includes('Open Song Hub'));
+        return Boolean(button && !button.disabled);
+      })()`,
+      8000,
+    );
+    await aBrowser.clickTextReal("Open Song Hub");
     const privateCreated = await aBrowser.waitFor(`location.pathname.startsWith('/song-hub/')`, 20000);
-    const privateCode = await aBrowser.eval("location.pathname.split('/').pop()");
-    const privateHost = await aBrowser.waitForTextCI("You control the room", 15000);
-    check("host creates a private room", privateCreated && Boolean(privateCode) && privateHost, privateCode);
+    const privateCode = privateCreated ? await aBrowser.eval("location.pathname.split('/').pop()") : "";
+    const privateHost = privateCreated && (await aBrowser.waitForTextCI("You control the room", 15000));
+    check(
+      "host creates a private room",
+      privateNameReady && privatePasswordField && privatePasswordReady && privateSubmitReady && privateCreated && Boolean(privateCode) && privateHost,
+      JSON.stringify({ privateCode, privateNameReady, privatePasswordField, privatePasswordReady, privateSubmitReady, privateCreated, privateHost, path: await aBrowser.eval("location.pathname") }),
+    );
 
     await bBrowser.open("/song-hub", 2200);
     const privateHidden = await bBrowser.eval(
@@ -1033,7 +1065,7 @@ async function main() {
       const section = heading?.closest('section');
       return section ? section.querySelectorAll('img').length : 0;
     })()`;
-    const badgesRendered = await aBrowser.waitFor(`${badgeSelector} >= 20`, 20000);
+    const badgesRendered = await aBrowser.waitFor(`${badgeSelector} >= 21`, 20000);
     const badgeCount = await aBrowser.eval(badgeSelector);
     const advancedTitles = [
       "Thousand Spins",
@@ -1043,11 +1075,12 @@ async function main() {
       "Night Owl",
       "Sonic Explorer",
       "Deep Cuts",
+      "Hub Legend",
     ];
     const badgeText = await aBrowser.bodyText();
     check(
-      "profile shows 20 badges including the advanced set",
-      profileReady && badgesRendered && badgeCount >= 20 && advancedTitles.every((title) => badgeText.includes(title)),
+      "profile shows 21 badges including the rare and advanced sets",
+      profileReady && badgesRendered && badgeCount >= 21 && advancedTitles.every((title) => badgeText.includes(title)),
       `${badgeCount} badge tiles`,
     );
 

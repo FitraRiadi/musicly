@@ -46,6 +46,13 @@ export function SongHubPage() {
     void loadLobby();
   }, [loadLobby]);
 
+  // A joined member should never land back on the lobby. The room stays alive
+  // while they browse the rest of the app, so the Song Hub destination is the
+  // room itself until they explicitly leave it.
+  useEffect(() => {
+    if (room) navigate(`/song-hub/${room.code}`, { replace: true });
+  }, [navigate, room]);
+
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!name.trim()) return;
