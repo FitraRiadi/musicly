@@ -75,19 +75,12 @@ def serialize_badge(badge: Badge, *, earned_at=None, value: int = 0) -> dict:
 
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.CharField(read_only=True)
-    avatar = serializers.SerializerMethodField()
+    avatar = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "name", "display_name", "bio", "avatar", "is_staff", "created_at"]
-        read_only_fields = ["id", "username", "email", "is_staff", "created_at", "name", "avatar"]
-
-    def get_avatar(self, obj: User):
-        return avatar_url(obj, self.context.get("request"))
-
-    def update(self, instance, validated_data):
-        instance = super().update(instance, validated_data)
-        return instance
+        read_only_fields = ["id", "username", "email", "is_staff", "created_at", "name"]
 
 
 class PublicUserSerializer(serializers.ModelSerializer):

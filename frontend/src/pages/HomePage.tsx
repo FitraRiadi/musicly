@@ -15,16 +15,20 @@ function QuickTile({ track, tracks, index }: { track: Track; tracks: Track[]; in
   const isCurrent = queue[queueIndex]?.id === track.id;
 
   return (
-    <button
-      onClick={() => (isCurrent ? togglePlay() : playContext(tracks, index, "Recently played"))}
-      className="group flex items-center gap-3 overflow-hidden rounded-lg bg-white/[0.07] pr-3 text-left transition hover:bg-white/[0.14]"
-    >
-      <img src={track.album.cover_small || track.album.cover} alt="" className="h-14 w-14 object-cover sm:h-16 sm:w-16" />
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{track.title}</span>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-black opacity-0 shadow-glow transition group-hover:opacity-100">
+    <div className="group flex items-center gap-3 overflow-hidden rounded-lg bg-white/[0.07] pr-3 transition hover:bg-white/[0.14]">
+      <Link to={`/track/${track.id}`} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <img src={track.album.cover_small || track.album.cover} alt="" className="h-14 w-14 object-cover sm:h-16 sm:w-16" />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{track.title}</span>
+      </Link>
+      <button
+        type="button"
+        onClick={() => (isCurrent ? togglePlay() : playContext(tracks, index, "Recently played"))}
+        aria-label={isCurrent && isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-black opacity-100 shadow-glow transition focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+      >
         {isCurrent && isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
-      </span>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -113,21 +117,25 @@ export function HomePage() {
               ))}
 
           {user && likedCount > 0 && (
-            <button
-              onClick={() => {
-                const tracks = Object.values(liked);
-                if (tracks.length) playContext(tracks, 0, "Liked Songs");
-              }}
-              className="group flex items-center gap-3 overflow-hidden rounded-lg bg-gradient-to-r from-[#3b1a8a] to-white/[0.07] pr-3 text-left transition hover:from-[#4a22a8]"
-            >
-              <span className="flex h-14 w-14 items-center justify-center bg-gradient-to-br from-[#5a2fd1] to-[#b9a7ff] sm:h-16 sm:w-16">
-                <Heart className="h-6 w-6 fill-white text-white" />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold">Liked Songs</span>
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-black opacity-0 shadow-glow transition group-hover:opacity-100">
+            <div className="group flex items-center gap-3 overflow-hidden rounded-lg bg-gradient-to-r from-[#3b1a8a] to-white/[0.07] pr-3 transition hover:from-[#4a22a8]">
+              <Link to="/liked" className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center bg-gradient-to-br from-[#5a2fd1] to-[#b9a7ff] sm:h-16 sm:w-16">
+                  <Heart className="h-6 w-6 fill-white text-white" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">Liked Songs</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  const tracks = Object.values(liked);
+                  if (tracks.length) playContext(tracks, 0, "Liked Songs");
+                }}
+                aria-label="Play Liked Songs"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-black opacity-100 shadow-glow transition focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+              >
                 <Play className="ml-0.5 h-4 w-4 fill-current" />
-              </span>
-            </button>
+              </button>
+            </div>
           )}
 
           {!user && !loading && quickTracks.length === 0 && (

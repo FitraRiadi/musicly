@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Music2, Quote, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { GripHorizontal, Music2, Quote, X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Lyrics } from "@/lib/types";
+import { useDraggablePanel } from "@/hooks/useDraggablePanel";
 import { usePlayerStore } from "@/store/player";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +54,10 @@ export function LyricsPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const lineRefs = useRef<Array<HTMLParagraphElement | null>>([]);
+  const { panelRef, position, dragging, dragHandleProps } = useDraggablePanel(
+    "musicly_lyrics_position",
+    lyricsOpen && Boolean(track),
+  );
 
   useEffect(() => {
     if (!lyricsOpen || !track) return;
@@ -116,10 +121,27 @@ export function LyricsPanel() {
 
   if (!lyricsOpen || !track) return null;
 
+  const panelStyle = {
+    "--panel-x": `${position.x}px`,
+    "--panel-y": `${position.y}px`,
+  } as CSSProperties;
+
   return (
-    <aside className="fixed inset-0 z-[80] flex flex-col bg-ink-900/95 pb-safe pt-safe backdrop-blur-2xl md:inset-auto md:bottom-[104px] md:right-3 md:top-3 md:z-40 md:w-[390px] md:rounded-2xl md:border md:border-white/10 md:bg-ink-800/95 md:pb-0 md:pt-0 md:shadow-2xl">
-      <header className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4 md:px-6">
+    <aside
+      ref={panelRef}
+      style={panelStyle}
+      className={cn(
+        "fixed inset-0 z-[80] flex flex-col bg-ink-900/95 pb-safe pt-safe backdrop-blur-2xl md:inset-auto md:right-3 md:top-3 md:z-40 md:h-[min(680px,calc(100dvh-140px))] md:w-[390px] md:translate-x-[var(--panel-x)] md:translate-y-[var(--panel-y)] md:rounded-2xl md:border md:border-white/10 md:bg-ink-800/95 md:pb-0 md:pt-0 md:shadow-2xl",
+        dragging && "md:ring-1 md:ring-primary/35",
+      )}
+    >
+      <header
+        {...dragHandleProps}
+        className="flex cursor-grab touch-none items-start justify-between gap-4 border-b border-white/10 px-5 py-4 active:cursor-grabbing md:px-6"
+        title="Drag to move"
+      >
         <div className="flex min-w-0 items-start gap-3">
+          <GripHorizontal className="mt-2 h-4 w-4 shrink-0 text-white/20" />
           <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
             <Quote className="h-4 w-4 fill-current" />
           </span>

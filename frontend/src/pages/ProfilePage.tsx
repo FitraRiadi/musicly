@@ -26,6 +26,8 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { UserCard } from "@/components/social/UserCard";
 import { BadgeTile } from "@/components/social/BadgeTile";
+import { AvatarCropDialog } from "@/components/profile/AvatarCropDialog";
+import { ProfileBanner } from "@/components/profile/ProfileBanner";
 import { useAuthStore } from "@/store/auth";
 import { useLibraryStore } from "@/store/library";
 import { useUiStore } from "@/store/ui";
@@ -48,6 +50,7 @@ export function ProfilePage() {
   const [bio, setBio] = useState(currentUser?.bio || "");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [friendsData, setFriendsData] = useState<FriendList | null>(null);
   const [badges, setBadges] = useState<BadgeModel[]>([]);
@@ -86,10 +89,22 @@ export function ProfilePage() {
 
   const pickAvatar = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
-    setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
+    event.target.value = "";
+    if (file) setCropFile(file);
   };
+
+  const confirmCrop = (file: File, previewUrl: string) => {
+    setAvatarFile(file);
+    setAvatarPreview(previewUrl);
+    setCropFile(null);
+    toast("Photo ready. Save changes to update your profile.", "default");
+  };
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    };
+  }, [avatarPreview]);
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -107,7 +122,11 @@ export function ProfilePage() {
       }
       setProfile(updated);
       setUser(updated);
+      setDisplayName(updated.display_name || "");
+      setBio(updated.bio || "");
       setAvatarFile(null);
+      setAvatarPreview(null);
+      setCropFile(null);
       toast("Profile updated", "success");
     } catch (error: any) {
       toast(error?.message || "Could not save your profile.", "error");
@@ -170,47 +189,52 @@ export function ProfilePage() {
 
   return (
     <div className="animate-fade-up pb-12 pt-6">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[radial-gradient(ellipse_at_top,rgba(30,215,96,0.14),transparent_65%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[radial-gradient(ellipse_at_top,rgba(30,215,96,0.12),transparent_65%)]" />
 
-      <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-end">
-        <div className="group relative">
-          <Avatar className="h-32 w-32 shadow-2xl ring-4 ring-black/30 sm:h-40 sm:w-40">
-            <AvatarImage src={avatarPreview || user?.avatar || undefined} alt={user?.name} />
-            <AvatarFallback className="bg-gradient-to-br from-primary to-emerald-700 text-4xl font-black text-black">
-              {initials(user?.name)}
-            </AvatarFallback>
-          </Avatar>
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105"
-            aria-label="Change profile photo"
-          >
-            <Camera className="h-4 w-4" />
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickAvatar} />
-        </div>
-        <div className="min-w-0 flex-1 pb-1">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/60">Profile</p>
-          <h1 className="mt-1 truncate text-4xl font-extrabold tracking-tight sm:text-5xl">{user?.name}</h1>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/50">
-            <span>@{user?.username}</span>
-            <span>·</span>
-            <span>Member since {user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear()}</span>
-            {user?.is_staff && <Badge variant="success">Staff</Badge>}
+      <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-ink-850 shadow-2xl">
+        <ProfileBanner seed={user?.username || "musicly"} />
+        <div className="relative -mt-16 px-4 pb-5 sm:-mt-20 sm:px-6">
+          <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-end">
+            <div className="group relative">
+              <Avatar className="h-32 w-32 shadow-2xl ring-4 ring-[#0b0b0b] sm:h-40 sm:w-40">
+                <AvatarImage src={avatarPreview || user?.avatar || undefined} alt={user?.name} />
+                <AvatarFallback className="bg-gradient-to-br from-primary to-emerald-700 text-4xl font-black text-black">
+                  {initials(user?.name)}
+                </AvatarFallback>
+              </Avatar>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105"
+                aria-label="Change profile photo"
+              >
+                <Camera className="h-4 w-4" />
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickAvatar} />
+            </div>
+            <div className="min-w-0 flex-1 pb-1">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/60">Profile</p>
+              <h1 className="mt-1 truncate text-4xl font-extrabold tracking-tight sm:text-5xl">{user?.name}</h1>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/50">
+                <span>@{user?.username}</span>
+                <span>·</span>
+                <span>Member since {user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear()}</span>
+                {user?.is_staff && <Badge variant="success">Staff</Badge>}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" className="gap-2">
+                <Link to={`/user/${user?.username || ""}`}>
+                  <Users className="h-4 w-4" /> Public profile
+                </Link>
+              </Button>
+              <Button variant="outline" onClick={() => navigate("/dashboard")} className="gap-2">
+                <BarChart3 className="h-4 w-4" /> Dashboard
+              </Button>
+              <Button variant="ghost" onClick={handleLogout} className="gap-2 text-white/60">
+                <LogOut className="h-4 w-4" /> Log out
+              </Button>
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" className="gap-2">
-            <Link to={`/user/${user?.username || ""}`}>
-              <Users className="h-4 w-4" /> Public profile
-            </Link>
-          </Button>
-          <Button variant="outline" onClick={() => navigate("/dashboard")} className="gap-2">
-            <BarChart3 className="h-4 w-4" /> Dashboard
-          </Button>
-          <Button variant="ghost" onClick={handleLogout} className="gap-2 text-white/60">
-            <LogOut className="h-4 w-4" /> Log out
-          </Button>
         </div>
       </div>
 
@@ -438,6 +462,8 @@ export function ProfilePage() {
           </div>
         </div>
       </div>
+
+      <AvatarCropDialog file={cropFile} onCancel={() => setCropFile(null)} onConfirm={confirmCrop} />
     </div>
   );
 }

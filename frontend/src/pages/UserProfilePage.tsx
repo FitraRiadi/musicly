@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlaylistCover } from "@/components/music/PlaylistCover";
 import { BadgeTile } from "@/components/social/BadgeTile";
+import { ProfileBanner } from "@/components/profile/ProfileBanner";
 import { useAuthStore } from "@/store/auth";
 import { useUiStore } from "@/store/ui";
 import { initials } from "@/lib/utils";
@@ -154,72 +155,77 @@ export function UserProfilePage() {
         <ArrowLeft className="h-3.5 w-3.5" /> Back
       </button>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-[radial-gradient(ellipse_at_top,rgba(30,215,96,0.14),transparent_65%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-[radial-gradient(ellipse_at_top,rgba(30,215,96,0.12),transparent_65%)]" />
 
-      <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-end">
-        <Avatar className="h-32 w-32 shadow-2xl ring-4 ring-black/30 sm:h-40 sm:w-40">
-          <AvatarImage src={user.avatar || undefined} alt={user.name} />
-          <AvatarFallback className="bg-gradient-to-br from-primary to-emerald-700 text-4xl font-black text-black">
-            {initials(user.name)}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1 pb-1">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/60">Listener</p>
-          <h1 className="mt-1 truncate text-4xl font-extrabold tracking-tight sm:text-5xl">{user.name}</h1>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/50">
-            <span>@{user.username}</span>
-            <span>·</span>
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" />
-              Member since {new Date(user.created_at).getFullYear()}
-            </span>
-            {user.friendship.status === "friends" && (
-              <Badge variant="success" className="gap-1">
-                <Check className="h-3 w-3" /> Friends
-              </Badge>
-            )}
+      <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-ink-850 shadow-2xl">
+        <ProfileBanner seed={user.username} />
+        <div className="relative -mt-16 px-4 pb-5 sm:-mt-20 sm:px-6">
+          <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-end">
+            <Avatar className="h-32 w-32 shadow-2xl ring-4 ring-[#0b0b0b] sm:h-40 sm:w-40">
+              <AvatarImage src={user.avatar || undefined} alt={user.name} />
+              <AvatarFallback className="bg-gradient-to-br from-primary to-emerald-700 text-4xl font-black text-black">
+                {initials(user.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1 pb-1">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/60">Listener</p>
+              <h1 className="mt-1 truncate text-4xl font-extrabold tracking-tight sm:text-5xl">{user.name}</h1>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/50">
+                <span>@{user.username}</span>
+                <span>·</span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" />
+                  Member since {new Date(user.created_at).getFullYear()}
+                </span>
+                {user.friendship.status === "friends" && (
+                  <Badge variant="success" className="gap-1">
+                    <Check className="h-3 w-3" /> Friends
+                  </Badge>
+                )}
+              </div>
+              {user.bio && <p className="mt-3 max-w-2xl text-sm text-white/60">{user.bio}</p>}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {data.is_self ? (
+                <Button asChild variant="secondary" className="gap-2">
+                  <Link to="/profile">Edit your profile</Link>
+                </Button>
+              ) : !currentUser ? (
+                <Button onClick={() => navigate("/login")} className="gap-2">
+                  <UserPlus className="h-4 w-4" /> Log in to connect
+                </Button>
+              ) : friendship.status === "friends" ? (
+                <>
+                  <Button variant="secondary" className="gap-2" disabled>
+                    <Check className="h-4 w-4" /> Friends
+                  </Button>
+                  <Button variant="ghost" className="text-white/50" onClick={() => void removeFriend()} disabled={busy}>
+                    Remove
+                  </Button>
+                </>
+              ) : friendship.status === "pending_outgoing" ? (
+                <Button variant="outline" className="gap-2" disabled>
+                  <Loader2 className="h-4 w-4" /> Request sent
+                </Button>
+              ) : friendship.status === "pending_incoming" ? (
+                <>
+                  <Button className="gap-2" onClick={() => void acceptFriend()} disabled={busy}>
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Accept request
+                  </Button>
+                  <Button variant="ghost" className="gap-1.5 text-white/50" onClick={() => void declineFriend()} disabled={busy}>
+                    <X className="h-4 w-4" /> Decline
+                  </Button>
+                </>
+              ) : (
+                <Button className="gap-2" onClick={() => void addFriend()} disabled={busy}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                  Add friend
+                </Button>
+              )}
+            </div>
           </div>
-          {user.bio && <p className="mt-3 max-w-2xl text-sm text-white/60">{user.bio}</p>}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {data.is_self ? (
-            <Button asChild variant="secondary" className="gap-2">
-              <Link to="/profile">Edit your profile</Link>
-            </Button>
-          ) : !currentUser ? (
-            <Button onClick={() => navigate("/login")} className="gap-2">
-              <UserPlus className="h-4 w-4" /> Log in to connect
-            </Button>
-          ) : friendship.status === "friends" ? (
-            <>
-              <Button variant="secondary" className="gap-2" disabled>
-                <Check className="h-4 w-4" /> Friends
-              </Button>
-              <Button variant="ghost" className="text-white/50" onClick={() => void removeFriend()} disabled={busy}>
-                Remove
-              </Button>
-            </>
-          ) : friendship.status === "pending_outgoing" ? (
-            <Button variant="outline" className="gap-2" disabled>
-              <Loader2 className="h-4 w-4" /> Request sent
-            </Button>
-          ) : friendship.status === "pending_incoming" ? (
-            <>
-              <Button className="gap-2" onClick={() => void acceptFriend()} disabled={busy}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                Accept request
-              </Button>
-              <Button variant="ghost" className="gap-1.5 text-white/50" onClick={() => void declineFriend()} disabled={busy}>
-                <X className="h-4 w-4" /> Decline
-              </Button>
-            </>
-          ) : (
-            <Button className="gap-2" onClick={() => void addFriend()} disabled={busy}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-              Add friend
-            </Button>
-          )}
         </div>
       </div>
 

@@ -1,7 +1,8 @@
-import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
-import { GripVertical, ListMusic, Play, Trash2, X } from "lucide-react";
+import { GripHorizontal, GripVertical, ListMusic, Play, Trash2, X } from "lucide-react";
 import { usePlayerStore } from "@/store/player";
+import { useDraggablePanel } from "@/hooks/useDraggablePanel";
 import { cn, formatDuration } from "@/lib/utils";
 
 export function QueuePanel() {
@@ -19,11 +20,16 @@ export function QueuePanel() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<number | null>(null);
   const draggedIndexRef = useRef<number | null>(null);
+  const { panelRef, position, dragging, dragHandleProps } = useDraggablePanel("musicly_queue_position", queueOpen);
 
   if (!queueOpen) return null;
 
   const upNext = queue.length - index - 1;
   const canReorder = upNext > 1;
+  const panelStyle = {
+    "--panel-x": `${position.x}px`,
+    "--panel-y": `${position.y}px`,
+  } as CSSProperties;
 
   const endDrag = () => {
     draggedIndexRef.current = null;
@@ -62,13 +68,27 @@ export function QueuePanel() {
   };
 
   return (
-    <aside className="fixed bottom-[104px] right-3 top-3 z-40 hidden w-[350px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-ink-800/95 shadow-2xl backdrop-blur-2xl md:flex">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-        <div>
-          <h2 className="text-sm font-bold">Queue</h2>
-          <p className="text-[11px] text-white/45">
-            {context ? `From ${context}` : "Now playing"} · {upNext} up next
-          </p>
+    <aside
+      ref={panelRef}
+      style={panelStyle}
+      className={cn(
+        "fixed right-3 top-3 z-40 hidden w-[350px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-ink-800/95 shadow-2xl backdrop-blur-2xl md:flex md:h-[min(640px,calc(100dvh-140px))] md:translate-x-[var(--panel-x)] md:translate-y-[var(--panel-y)]",
+        dragging && "ring-1 ring-primary/35",
+      )}
+    >
+      <div
+        {...dragHandleProps}
+        className="flex cursor-grab touch-none items-center justify-between border-b border-white/10 px-4 py-3 active:cursor-grabbing"
+        title="Drag to move"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <GripHorizontal className="h-4 w-4 shrink-0 text-white/20" />
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold">Queue</h2>
+            <p className="text-[11px] text-white/45">
+              {context ? `From ${context}` : "Now playing"} · {upNext} up next
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <button

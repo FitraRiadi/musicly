@@ -1,4 +1,4 @@
-import { Check, Lock, Sparkles } from "lucide-react";
+import { Check, Lock } from "lucide-react";
 import type { Badge } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -68,11 +68,7 @@ export function BadgeTile({
           <span className="text-[10px] font-semibold uppercase tracking-wider text-white/35">
             {badge.earned ? "Collected" : `${Math.min(badge.value, badge.threshold)}/${badge.threshold}`}
           </span>
-          {badge.earned ? (
-            <span className="flex items-center gap-1 text-[10px] font-semibold text-primary">
-              <Sparkles className="h-3 w-3" /> On your profile
-            </span>
-          ) : onCollect ? (
+          {badge.earned ? null : onCollect ? (
             <Button
               size="sm"
               variant={badge.progress >= 100 ? "default" : "ghost"}

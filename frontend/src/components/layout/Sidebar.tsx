@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, NavLink } from "react-router-dom";
 import {
   BarChart3,
@@ -31,6 +32,23 @@ const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: BarChart3 },
 ];
 
+const SIDEBAR_TOP_KEY = "musicly_sidebar_top_height";
+const MIN_TOP_HEIGHT = 210;
+const MIN_LIBRARY_HEIGHT = 190;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function readTopHeight() {
+  try {
+    const value = Number(localStorage.getItem(SIDEBAR_TOP_KEY));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function Sidebar() {
   const user = useAuthStore((state) => state.user);
   const playlists = useLibraryStore((state) => state.playlists);
@@ -39,14 +57,117 @@ export function Sidebar() {
   const hubInvites = useSongHubStore((state) => state.invitations.length);
   const openCreatePlaylist = useUiStore((state) => state.openCreatePlaylist);
   const { canInstall, promptInstall } = useInstallPrompt();
+  const asideRef = useRef<HTMLElement | null>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const [asideHeight, setAsideHeight] = useState(720);
+  const [topHeight, setTopHeight] = useState<number | null>(() => readTopHeight());
+  const topHeightRef = useRef<number | null>(topHeight);
+  const [resizing, setResizing] = useState(false);
+
+  const maxTopHeight = useCallback(
+    () => Math.max(MIN_TOP_HEIGHT, asideHeight - MIN_LIBRARY_HEIGHT - 12),
+    [asideHeight],
+  );
+
+  const setTop = useCallback(
+    (value: number) => {
+      const next = clamp(value, MIN_TOP_HEIGHT, maxTopHeight());
+      topHeightRef.current = next;
+      setTopHeight(next);
+    },
+    [maxTopHeight],
+  );
+
+  useEffect(() => {
+    topHeightRef.current = topHeight;
+  }, [topHeight]);
+
+  useEffect(() => {
+    const node = asideRef.current;
+    if (!node) return;
+    const update = () => setAsideHeight(node.clientHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    const sync = () => {
+      if (topHeightRef.current === null) return;
+      setTop(topHeightRef.current);
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, [setTop]);
+
+  const persistTop = () => {
+    try {
+      if (topHeightRef.current === null) localStorage.removeItem(SIDEBAR_TOP_KEY);
+      else localStorage.setItem(SIDEBAR_TOP_KEY, String(Math.round(topHeightRef.current)));
+    } catch {
+      // Storage may be disabled; resizing still works for this session.
+    }
+  };
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const startHeight = topRef.current?.getBoundingClientRect().height ?? 320;
+    resizeRef.current = { startY: event.clientY, startHeight };
+    setTop(startHeight);
+    setResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resize = resizeRef.current;
+    if (!resize) return;
+    setTop(resize.startHeight + event.clientY - resize.startY);
+  };
+
+  const endResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizeRef.current) return;
+    resizeRef.current = null;
+    setResizing(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    persistTop();
+  };
+
+  const nudgeResize = (delta: number) => {
+    setTop((topHeightRef.current ?? 320) + delta);
+    persistTop();
+  };
+
+  const resetResize = () => {
+    topHeightRef.current = null;
+    setTopHeight(null);
+    try {
+      localStorage.removeItem(SIDEBAR_TOP_KEY);
+    } catch {
+      // Ignore storage errors.
+    }
+  };
 
   return (
-    <aside className="hidden w-[286px] shrink-0 flex-col gap-2 md:flex xl:w-[320px]">
-      <div className="rounded-2xl bg-ink-850 px-5 pb-4 pt-5">
-        <Link to="/" className="inline-flex" aria-label="Musicly home">
+    <aside ref={asideRef} className="hidden w-[286px] shrink-0 flex-col gap-2 md:flex xl:w-[320px]">
+      <div
+        ref={topRef}
+        style={topHeight === null ? undefined : { height: topHeight }}
+        className="flex min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl bg-ink-850 px-5 pb-4 pt-5"
+      >
+        <Link to="/" className="inline-flex shrink-0" aria-label="Musicly home">
           <Logo />
         </Link>
-        <nav className="mt-7 flex flex-col gap-1">
+        <nav className="thin-scrollbar mt-7 flex min-h-0 flex-col gap-1 overflow-y-auto pr-1">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -96,6 +217,47 @@ export function Sidebar() {
             </NavLink>
           ))}
         </nav>
+      </div>
+
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize Your Library section"
+        aria-valuemin={MIN_TOP_HEIGHT}
+        aria-valuemax={Math.round(maxTopHeight())}
+        aria-valuenow={Math.round(topHeight ?? 320)}
+        tabIndex={0}
+        title="Drag to resize Your Library. Double-click to reset."
+        onPointerDown={startResize}
+        onPointerMove={moveResize}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+        onDoubleClick={resetResize}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            nudgeResize(-16);
+          } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            nudgeResize(16);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            setTop(MIN_TOP_HEIGHT);
+            persistTop();
+          } else if (event.key === "End") {
+            event.preventDefault();
+            setTop(maxTopHeight());
+            persistTop();
+          }
+        }}
+        className="group relative -my-0.5 flex h-3 shrink-0 touch-none cursor-row-resize select-none items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        <span
+          className={cn(
+            "h-1 w-12 rounded-full bg-white/10 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary",
+            resizing && "bg-primary",
+          )}
+        />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-ink-850">
