@@ -10,7 +10,7 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, on-demand fu
 ## Features
 
 - **Discover** - personalized greeting, recently played quick picks, charts, an editorial alt and indie spotlight, genre browsing, and live search across tracks, artists, albums, playlists, and genres.
-- **Play** - persistent player with queue, shuffle, repeat, seek, volume, media-session integration, and a full-screen mobile player. Licensed local audio is used when available; otherwise Musicly streams the full track on demand through an optional local ytmp3 bridge, and falls back to Deezer's 30-second preview when the bridge is unavailable.
+- **Play** - persistent player with a drag-to-reorder queue, shuffle, repeat, seek, volume, media-session integration, and a full-screen mobile player. Licensed local audio is used when available; otherwise Musicly streams the full track on demand through an optional local ytmp3 bridge, and falls back to Deezer's 30-second preview when the bridge is unavailable.
 - **Download** - save a full track from the song action menu. Django sends it as an attachment and the browser's download manager chooses the destination, so there is no folder picker and nothing is stored on the server.
 - **Lyrics** - on-demand synced or plain lyrics with active-line highlighting and auto-scroll. Lyrics are cached in PostgreSQL after the first lookup.
 - **Collect** - like songs, create and edit playlists, reorder tracks, and follow artists.
@@ -107,7 +107,7 @@ Musicly can stream full songs without downloading them. Start the local ytmp3 sc
 - `POST /api/search` to resolve `artist title` to a YouTube video id.
 - `GET /api/stream/<video_id>` to proxy audio with HTTP `Range` support.
 
-Set `YTMP3_API` to an empty value to disable the bridge; playback then uses Deezer previews only. The first play can take 5-15 seconds while yt-dlp searches and resolves. Musicly caches the video id for 30 days and the scraper caches direct media URLs until shortly before they expire, so later plays are fast.
+Set `YTMP3_API` to an empty value to disable the bridge; playback then uses Deezer previews only. The first play can take 5-15 seconds while yt-dlp searches and resolves. Musicly caches the video id for 30 days and the scraper caches direct media URLs until shortly before they expire, so later plays are fast. Matches are ranked against the Deezer metadata, preferring the artist's official audio and penalizing clean/censored, live, cover, and instrumental uploads so explicit studio tracks are not replaced by edited versions.
 
 Playback precedence:
 

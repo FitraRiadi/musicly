@@ -1,13 +1,65 @@
+import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
-import { ListMusic, Play, Trash2, X } from "lucide-react";
+import { GripVertical, ListMusic, Play, Trash2, X } from "lucide-react";
 import { usePlayerStore } from "@/store/player";
-import { formatDuration } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
+
 export function QueuePanel() {
-  const { queue, index, queueOpen, context, jumpTo, removeFromQueue, clearQueue, setQueueOpen } = usePlayerStore();
+  const {
+    queue,
+    index,
+    queueOpen,
+    context,
+    jumpTo,
+    reorderQueue,
+    removeFromQueue,
+    clearQueue,
+    setQueueOpen,
+  } = usePlayerStore();
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<number | null>(null);
+  const draggedIndexRef = useRef<number | null>(null);
 
   if (!queueOpen) return null;
 
   const upNext = queue.length - index - 1;
+  const canReorder = upNext > 1;
+
+  const endDrag = () => {
+    draggedIndexRef.current = null;
+    setDraggedIndex(null);
+    setDropTarget(null);
+  };
+
+  const handleDragStart = (event: DragEvent<HTMLDivElement>, itemIndex: number) => {
+    draggedIndexRef.current = itemIndex;
+    setDraggedIndex(itemIndex);
+    setDropTarget(itemIndex);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(itemIndex));
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>, itemIndex: number) => {
+    if (draggedIndexRef.current === null || itemIndex <= index) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget((current) => (current === itemIndex ? current : itemIndex));
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>, itemIndex: number) => {
+    event.preventDefault();
+    const fromIndex = draggedIndexRef.current;
+    if (fromIndex !== null) reorderQueue(fromIndex, itemIndex);
+    endDrag();
+  };
+
+  const handleReorderKey = (event: KeyboardEvent<HTMLButtonElement>, itemIndex: number) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const target = event.key === "ArrowUp" ? itemIndex - 1 : itemIndex + 1;
+    if (target <= index || target >= queue.length) return;
+    event.preventDefault();
+    reorderQueue(itemIndex, target);
+  };
 
   return (
     <aside className="fixed bottom-[104px] right-3 top-3 z-40 hidden w-[350px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-ink-800/95 shadow-2xl backdrop-blur-2xl md:flex">
@@ -50,12 +102,38 @@ export function QueuePanel() {
         )}
 
         {upNext > 0 && (
-          <p className="px-2 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Next up</p>
+          <div className="flex items-center justify-between px-2 pb-1 pt-4">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-white/40">Next up</p>
+            {canReorder && <p className="text-[10px] text-white/30">Drag to reorder</p>}
+          </div>
         )}
         {queue.map((track, i) => {
           if (i <= index) return null;
+          const isDragging = draggedIndex === i;
+          const isDropTarget = dropTarget === i && draggedIndex !== null && draggedIndex !== i;
           return (
-            <div key={`${track.id}-${i}`} className="group flex items-center gap-3 rounded-lg p-2 hover:bg-white/[0.06]">
+            <div
+              key={`${track.id}-${i}`}
+              draggable
+              onDragStart={(event) => handleDragStart(event, i)}
+              onDragOver={(event) => handleDragOver(event, i)}
+              onDrop={(event) => handleDrop(event, i)}
+              onDragEnd={endDrag}
+              className={cn(
+                "group flex items-center gap-2 rounded-lg p-2 transition-colors hover:bg-white/[0.06]",
+                isDragging && "opacity-40",
+                isDropTarget && "bg-white/[0.1] ring-1 ring-inset ring-spotify/40",
+              )}
+            >
+              <button
+                type="button"
+                aria-label={`Reorder ${track.title}. Use arrow up or down.`}
+                title="Drag to reorder"
+                onKeyDown={(event) => handleReorderKey(event, i)}
+                className="-ml-1 shrink-0 cursor-grab rounded p-1 text-white/25 transition hover:bg-white/10 hover:text-white group-hover:text-white/50 active:cursor-grabbing"
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </button>
               <button onClick={() => jumpTo(i)} className="relative shrink-0" aria-label={`Play ${track.title}`}>
                 <img src={track.album.cover_small || track.album.cover} alt="" className="h-10 w-10 rounded object-cover" />
                 <span className="absolute inset-0 flex items-center justify-center rounded bg-black/50 opacity-0 transition group-hover:opacity-100">

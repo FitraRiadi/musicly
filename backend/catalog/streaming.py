@@ -71,7 +71,8 @@ def _ratio(left: str, right: str) -> float:
 def _candidate_score(track, result: dict) -> float:
     """Rank a YouTube search result against the Deezer track metadata."""
     title = _normalize(track.title)
-    candidate_title = _normalize(result.get("title") or "")
+    raw_title = (result.get("title") or "").lower()
+    candidate_title = _normalize(raw_title)
     artist = _normalize(track.artist_name)
     channel = _normalize(result.get("channel") or "")
 
@@ -79,8 +80,10 @@ def _candidate_score(track, result: dict) -> float:
     if title and title in candidate_title:
         title_score = max(title_score, 0.92)
 
-    if artist and (artist in candidate_title or artist in channel):
+    if artist and artist in channel:
         artist_score = 1.0
+    elif artist and artist in candidate_title:
+        artist_score = 0.85
     else:
         artist_score = max(_ratio(artist, channel), _ratio(artist, candidate_title))
 
@@ -93,8 +96,25 @@ def _candidate_score(track, result: dict) -> float:
     else:
         duration_score = 0.5
 
-    bonus = 0.05 if "official audio" in candidate_title or "topic" in channel else 0.0
-    return 0.5 * title_score + 0.3 * artist_score + 0.2 * duration_score + bonus
+    bonus = 0.05 if "official audio" in raw_title or "official video" in raw_title else 0.0
+    if channel == artist or channel.endswith(" topic"):
+        bonus += 0.03
+
+    # Prefer the original studio recording. Clean/radio versions are common on
+    # YouTube and silently remove profanity, which makes the song feel chopped.
+    penalty = 0.0
+    clean_markers = ("(clean)", "[clean]", "clean version", "clean edit", "clean audio", "- clean")
+    if "clean" not in title and any(marker in raw_title for marker in clean_markers):
+        penalty += 0.4
+    if "censored" not in title and "censored" in raw_title:
+        penalty += 0.4
+    if "kidz bop" not in title and "kidz bop" in raw_title:
+        penalty += 0.4
+    for marker in ("live", "cover", "instrumental", "karaoke", "reaction", "sped up", "nightcore", "slowed"):
+        if re.search(rf"\b{re.escape(marker)}\b", raw_title) and marker not in title:
+            penalty += 0.15
+
+    return 0.5 * title_score + 0.3 * artist_score + 0.2 * duration_score + bonus - penalty
 
 
 def _search_video_id(track) -> str:

@@ -32,6 +32,7 @@ interface PlayerState {
   addToQueue: (track: Track) => void;
   playNext: (track: Track) => void;
   jumpTo: (index: number) => void;
+  reorderQueue: (fromIndex: number, toIndex: number) => void;
   removeFromQueue: (index: number) => void;
   clearQueue: () => void;
   setQueueOpen: (open: boolean) => void;
@@ -249,6 +250,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       if (!track) return;
       set({ index: targetIndex });
       startTrack(track);
+    },
+
+    reorderQueue: (fromIndex, toIndex) => {
+      const { queue, index } = get();
+      if (fromIndex === toIndex) return;
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= queue.length || toIndex >= queue.length) return;
+
+      const next = [...queue];
+      const [track] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, track);
+
+      let nextIndex = index;
+      if (fromIndex === index) nextIndex = toIndex;
+      else if (fromIndex < index && toIndex >= index) nextIndex = index - 1;
+      else if (fromIndex > index && toIndex <= index) nextIndex = index + 1;
+
+      set({ queue: next, index: nextIndex });
     },
 
     removeFromQueue: (removeIndex) => {
