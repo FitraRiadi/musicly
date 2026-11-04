@@ -81,11 +81,13 @@ export default defineConfig({
   server: {
     port: 5173,
     host: "0.0.0.0",
+    // Keep the browser-facing Host header so Django builds media URLs that
+    // point back at the Vite proxy (and stay reachable from another device).
     proxy: {
-      "/api": { target: API_TARGET, changeOrigin: true },
-      "/media": { target: API_TARGET, changeOrigin: true },
-      "/django-admin": { target: API_TARGET, changeOrigin: true },
-      "/static": { target: API_TARGET, changeOrigin: true },
+      "/api": { target: API_TARGET, changeOrigin: false },
+      "/media": { target: API_TARGET, changeOrigin: false },
+      "/django-admin": { target: API_TARGET, changeOrigin: false },
+      "/static": { target: API_TARGET, changeOrigin: false },
     },
   },
 });
