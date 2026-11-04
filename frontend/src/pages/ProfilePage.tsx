@@ -52,16 +52,21 @@ export function ProfilePage() {
   const [friendsData, setFriendsData] = useState<FriendList | null>(null);
   const [badges, setBadges] = useState<BadgeModel[]>([]);
   const [collecting, setCollecting] = useState<string | null>(null);
-  const [socialLoading, setSocialLoading] = useState(true);
+  const [badgesLoading, setBadgesLoading] = useState(true);
 
   const loadSocial = () => {
-    setSocialLoading(true);
-    Promise.allSettled([api.friends(), api.badges()])
-      .then(([friendsResult, badgesResult]) => {
-        if (friendsResult.status === "fulfilled") setFriendsData(friendsResult.value);
-        if (badgesResult.status === "fulfilled") setBadges(badgesResult.value.items);
-      })
-      .finally(() => setSocialLoading(false));
+    // Load badges independently from friends. A slow social request must not
+    // keep the badge catalogue in its skeleton state.
+    setBadgesLoading(true);
+    api
+      .badges()
+      .then((data) => setBadges(data.items))
+      .catch(() => undefined)
+      .finally(() => setBadgesLoading(false));
+    api
+      .friends()
+      .then((data) => setFriendsData(data))
+      .catch(() => undefined);
   };
 
   useEffect(() => {
@@ -248,7 +253,7 @@ export function ProfilePage() {
             </Link>
           </Button>
         </div>
-        {socialLoading && badges.length === 0 ? (
+        {badgesLoading && badges.length === 0 ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-32 animate-pulse rounded-xl bg-white/[0.04]" />

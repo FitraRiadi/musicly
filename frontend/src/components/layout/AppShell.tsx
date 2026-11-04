@@ -10,11 +10,13 @@ import { LyricsPanel } from "@/components/player/LyricsPanel";
 import { MobileNowPlaying } from "@/components/player/MobileNowPlaying";
 import { CreatePlaylistDialog } from "@/components/dialogs/CreatePlaylistDialog";
 import { AddToPlaylistDialog } from "@/components/dialogs/AddToPlaylistDialog";
+import { SongHubRequestDialog } from "@/components/songhub/SongHubRequestDialog";
 import { Toaster } from "@/components/ui/Toaster";
 import { useAuthStore } from "@/store/auth";
 import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { usePlayerStore } from "@/store/player";
+import { useSongHubStore } from "@/store/songhub";
 import { useUiStore } from "@/store/ui";
 
 export function AppShell() {
@@ -32,6 +34,8 @@ export function AppShell() {
   const setLyricsOpen = usePlayerStore((state) => state.setLyricsOpen);
   const mobileOpen = useUiStore((state) => state.mobilePlayerOpen);
   const setMobilePlayerOpen = useUiStore((state) => state.setMobilePlayerOpen);
+  const hydrateHub = useSongHubStore((state) => state.hydrate);
+  const resetHub = useSongHubStore((state) => state.reset);
 
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
@@ -44,6 +48,12 @@ export function AppShell() {
   useEffect(() => {
     if (user) void loadLibrary();
     else resetLibrary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user) void hydrateHub();
+    else resetHub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -104,6 +114,7 @@ export function AppShell() {
       <MobileNowPlaying />
       <CreatePlaylistDialog />
       <AddToPlaylistDialog />
+      <SongHubRequestDialog />
       <OfflineBanner />
       <Toaster />
     </div>

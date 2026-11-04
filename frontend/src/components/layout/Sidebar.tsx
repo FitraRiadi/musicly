@@ -7,6 +7,7 @@ import {
   Library,
   ListMusic,
   Plus,
+  Radio,
   Search,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
@@ -15,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/auth";
 import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
+import { useSongHubStore } from "@/store/songhub";
 import { useUiStore } from "@/store/ui";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { cn } from "@/lib/utils";
@@ -23,6 +25,7 @@ import { PlaylistCover } from "@/components/music/PlaylistCover";
 const navItems = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/search", label: "Search", icon: Search },
+  { to: "/song-hub", label: "Song Hub", icon: Radio },
   { to: "/library", label: "Your Library", icon: Library },
   { to: "/downloads", label: "Downloads", icon: Download },
   { to: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -32,6 +35,8 @@ export function Sidebar() {
   const user = useAuthStore((state) => state.user);
   const playlists = useLibraryStore((state) => state.playlists);
   const downloadCount = useDownloadsStore((state) => state.items.length);
+  const hubRoom = useSongHubStore((state) => state.room);
+  const hubInvites = useSongHubStore((state) => state.invitations.length);
   const openCreatePlaylist = useUiStore((state) => state.openCreatePlaylist);
   const { canInstall, promptInstall } = useInstallPrompt();
 
@@ -64,6 +69,21 @@ export function Sidebar() {
                   {item.to === "/downloads" && downloadCount > 0 && (
                     <span className="ml-auto rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold tabular-nums text-primary">
                       {downloadCount}
+                    </span>
+                  )}
+                  {item.to === "/song-hub" && (hubRoom || hubInvites > 0) && (
+                    <span
+                      className="ml-auto flex max-w-[90px] items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary"
+                      title={hubRoom ? `Live in ${hubRoom.name}` : `${hubInvites} pending invite(s)`}
+                    >
+                      {hubRoom ? (
+                        <>
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+                          {hubRoom.code}
+                        </>
+                      ) : (
+                        hubInvites
+                      )}
                     </span>
                   )}
                   {item.to === "/dashboard" && !user && (

@@ -14,6 +14,8 @@ import { DownloadsPage } from "@/pages/DownloadsPage";
 import { GenrePage } from "@/pages/GenrePage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { UserProfilePage } from "@/pages/UserProfilePage";
+import { SongHubPage } from "@/pages/SongHubPage";
+import { SongHubRoomPage } from "@/pages/SongHubRoomPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -113,6 +115,22 @@ export default function App() {
             <Route path="genre/:id" element={<GenrePage />} />
             <Route path="liked" element={<LikedSongsPage />} />
             <Route path="downloads" element={<DownloadsPage />} />
+            <Route
+              path="song-hub"
+              element={
+                <RequireAuth>
+                  <SongHubPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="song-hub/:code"
+              element={
+                <RequireAuth>
+                  <SongHubRoomPage />
+                </RequireAuth>
+              }
+            />
             <Route
               path="library"
               element={

@@ -203,6 +203,11 @@ export default {
           "0%, 100%": { height: "55%" },
           "50%": { height: "95%" },
         },
+        "reaction-float": {
+          "0%": { opacity: "0", transform: "translateY(0) scale(0.7)" },
+          "15%": { opacity: "1", transform: "translateY(-18px) scale(1.12)" },
+          "100%": { opacity: "0", transform: "translateY(-190px) scale(0.9)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -214,6 +219,7 @@ export default {
         "equalize-1": "equalize-1 0.9s ease-in-out infinite",
         "equalize-2": "equalize-2 1.1s ease-in-out infinite",
         "equalize-3": "equalize-3 0.8s ease-in-out infinite",
+        "reaction-float": "reaction-float 2.9s ease-out forwards",
       },
     },
   },

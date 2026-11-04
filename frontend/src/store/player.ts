@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, apiUrl, getAccessToken } from "@/lib/api";
 import { getOfflineAudio } from "@/lib/offline";
+import { songHubGate } from "@/lib/songhub-gate";
 import type { Track } from "@/lib/types";
 import { shuffleArray } from "@/lib/utils";
 
@@ -40,6 +41,21 @@ interface PlayerState {
   setLyricsOpen: (open: boolean) => void;
   toggleLyrics: () => void;
   setBuffering: (buffering: boolean) => void;
+  /** Apply host playback to this device without mirroring it back to the room. */
+  syncFromRoom: (track: Track, isPlaying: boolean, position: number) => void;
+}
+
+let suppressBroadcastFor: string | null = null;
+
+function playbackLocked() {
+  if (!songHubGate.active || songHubGate.isHost) return false;
+  songHubGate.onBlocked?.();
+  return true;
+}
+
+function syncHostPlayback(isPlaying: boolean, position: number) {
+  if (!songHubGate.active || !songHubGate.isHost) return;
+  songHubGate.onHostPlaybackChanged?.(isPlaying, position);
 }
 
 const hasAudio = typeof Audio !== "undefined";
@@ -186,7 +202,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       .catch(() => undefined);
   };
 
-  const startTrack = (track: Track, autoplay = true) => {
+  const startTrack = (track: Track, autoplay = true, startAt = 0) => {
     if (!audio) return;
     const requestId = ++startRequest;
     const remoteSource = sourceFor(track);
@@ -229,8 +245,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
       currentOfflineUrl = objectUrl;
       audio.volume = get().muted ? 0 : get().volume;
-      audio.currentTime = 0;
-      set({ duration: track.duration || 30, progress: 0, buffering: true });
+      const safeStart = Math.max(0, startAt || 0);
+      audio.currentTime = safeStart;
+      set({ duration: track.duration || 30, progress: safeStart, buffering: true });
       if (autoplay) {
         audio
           .play()
@@ -244,6 +261,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
     syncMediaSession(track);
     if (track.source !== "imported") reportHistory(track, get().context);
+    if (songHubGate.active && songHubGate.isHost && !songHubGate.applyingRemote) {
+      if (suppressBroadcastFor === track.id) {
+        suppressBroadcastFor = null;
+      } else if (track.source !== "imported") {
+        songHubGate.onHostTrackStarted?.(track);
+      }
+    }
 
     getOfflineAudio(track.id)
       .then((blob) => {
@@ -279,6 +303,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     buffering: false,
 
     playContext: (tracks, startIndex, context = "") => {
+      if (songHubGate.active && !songHubGate.isHost) {
+        const requested = tracks[startIndex] ?? tracks[0];
+        if (requested) songHubGate.onTrackRequest?.(requested);
+        return;
+      }
       const playable = tracks.filter(
         (track) =>
           track.source === "imported" ||
@@ -302,6 +331,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     playTrack: (track, context = "") => {
+      if (songHubGate.active && !songHubGate.isHost) {
+        songHubGate.onTrackRequest?.(track);
+        return;
+      }
       if (track.source !== "imported" && !track.preview && !(track.has_full_audio && track.stream_url)) return;
       const existing = get().queue.findIndex((item) => item.id === track.id);
       if (existing >= 0) {
@@ -317,19 +350,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
     togglePlay: () => {
       if (!audio) return;
+      if (playbackLocked()) return;
       if (!get().queue.length) return;
       if (audio.paused) {
         audio
           .play()
-          .then(() => set({ isPlaying: true }))
+          .then(() => {
+            set({ isPlaying: true });
+            syncHostPlayback(true, audio.currentTime);
+          })
           .catch(() => set({ isPlaying: false }));
       } else {
         audio.pause();
         set({ isPlaying: false });
+        syncHostPlayback(false, audio.currentTime);
       }
     },
 
     next: (automatic = false) => {
+      if (playbackLocked()) return;
       const { queue, index, repeat } = get();
       if (!queue.length) return;
       if (automatic && repeat === "one") {
@@ -352,10 +391,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       audio.pause();
       audio.currentTime = 0;
       set({ isPlaying: false, progress: 0, index: 0 });
+      syncHostPlayback(false, 0);
       resetStandby();
     },
 
     prev: () => {
+      if (playbackLocked()) return;
       const { queue, index, progress } = get();
       if (!queue.length) return;
       if (progress > 3) {
@@ -370,8 +411,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
     seek: (seconds) => {
       if (!audio) return;
+      if (playbackLocked()) return;
       audio.currentTime = seconds;
       set({ progress: seconds });
+      syncHostPlayback(!audio.paused, seconds);
     },
 
     setVolume: (volume) => {
@@ -388,6 +431,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     toggleShuffle: () => {
+      if (playbackLocked()) return;
       const { shuffle, queue, index } = get();
       if (!queue.length) {
         set({ shuffle: !shuffle });
@@ -404,6 +448,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     cycleRepeat: () => {
+      if (playbackLocked()) return;
       const order: RepeatMode[] = ["off", "all", "one"];
       const nextMode = order[(order.indexOf(get().repeat) + 1) % order.length];
       set({ repeat: nextMode });
@@ -411,11 +456,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     addToQueue: (track) => {
+      if (playbackLocked()) return;
       set({ queue: [...get().queue, track] });
       prefetchNext();
     },
 
     playNext: (track) => {
+      if (playbackLocked()) return;
       const queue = [...get().queue];
       queue.splice(get().index + 1, 0, track);
       set({ queue });
@@ -423,6 +470,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     jumpTo: (targetIndex) => {
+      if (playbackLocked()) return;
       const { queue } = get();
       const track = queue[targetIndex];
       if (!track) return;
@@ -431,6 +479,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     reorderQueue: (fromIndex, toIndex) => {
+      if (playbackLocked()) return;
       const { queue, index } = get();
       if (fromIndex === toIndex) return;
       if (fromIndex < 0 || toIndex < 0 || fromIndex >= queue.length || toIndex >= queue.length) return;
@@ -449,6 +498,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     removeFromQueue: (removeIndex) => {
+      if (playbackLocked()) return;
       const { queue, index } = get();
       if (removeIndex === index) return;
       const next = queue.filter((_, i) => i !== removeIndex);
@@ -457,6 +507,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     clearQueue: () => {
+      if (playbackLocked()) return;
       startRequest += 1;
       prefetchToken += 1;
       prefetchedTrackId = "";
@@ -488,6 +539,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       set({ lyricsOpen: open, queueOpen: open ? false : get().queueOpen });
     },
     setBuffering: (buffering) => set({ buffering }),
+
+    syncFromRoom: (track, playing, position) => {
+      if (!audio) return;
+      const state = get();
+      const current = state.queue[state.index];
+      if (!current || current.id !== track.id) {
+        suppressBroadcastFor = track.id;
+        set({ queue: [track], index: 0, context: "Song Hub", isPlaying: playing });
+        startTrack(track, playing, Math.max(0, position || 0));
+        return;
+      }
+      if (playing && audio.paused) {
+        audio.play().then(() => set({ isPlaying: true })).catch(() => undefined);
+      } else if (!playing && !audio.paused) {
+        audio.pause();
+        set({ isPlaying: false });
+      }
+      if (Number.isFinite(position) && Math.abs(audio.currentTime - position) > 2.5) {
+        audio.currentTime = Math.max(0, position);
+        set({ progress: Math.max(0, position) });
+      }
+    },
   };
 });
 

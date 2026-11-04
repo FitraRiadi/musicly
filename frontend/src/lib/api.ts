@@ -20,6 +20,15 @@ import type {
   PublicUser,
   SearchResults,
   SearchSuggestions,
+  SongHubInvite,
+  SongHubLobby,
+  SongHubMember,
+  SongHubMessage,
+  SongHubReaction,
+  SongHubReactionKey,
+  SongHubRequest,
+  SongHubSignal,
+  SongHubState,
   Track,
   User,
 } from "./types";
@@ -331,6 +340,97 @@ export const api = {
     }),
   unfollow: (artistId: string) =>
     request<{ following: boolean }>(`/follows/${artistId}/`, { method: "DELETE" }),
+
+  // Song Hub
+  songHubRooms: () => request<SongHubLobby>("/songhub/rooms/"),
+  createSongHubRoom: (payload: { name: string; visibility: "public" | "private"; password?: string }) =>
+    request<SongHubState>("/songhub/rooms/", { method: "POST", body: payload }),
+  songHubInvitations: () =>
+    request<{ items: SongHubInvite[] }>("/songhub/invitations/"),
+  declineSongHubInvitation: (id: number) =>
+    request<{ declined: boolean }>(`/songhub/invitations/${id}/decline/`, { method: "POST" }),
+  joinSongHub: (code: string, password?: string) =>
+    request<SongHubState>(`/songhub/rooms/${encodeURIComponent(code)}/join/`, {
+      method: "POST",
+      body: { password: password || "" },
+    }),
+  songHubState: (code: string) =>
+    request<SongHubState>(`/songhub/rooms/${encodeURIComponent(code)}/state/`),
+  leaveSongHub: (code: string) =>
+    request<{ left: boolean; room_closed: boolean; promoted: any }>(
+      `/songhub/rooms/${encodeURIComponent(code)}/leave/`,
+      { method: "POST" },
+    ),
+  transferSongHubHost: (code: string, userId: number) =>
+    request<SongHubState>(`/songhub/rooms/${encodeURIComponent(code)}/host/`, {
+      method: "POST",
+      body: { user_id: userId },
+    }),
+  updateSongHubSettings: (
+    code: string,
+    payload: { name?: string; visibility?: "public" | "private"; password?: string },
+  ) =>
+    request<SongHubState>(`/songhub/rooms/${encodeURIComponent(code)}/settings/`, {
+      method: "PATCH",
+      body: payload,
+    }),
+  songHubPlayback: (
+    code: string,
+    payload: { track?: Track; is_playing?: boolean; position_seconds?: number },
+  ) =>
+    request<SongHubState>(`/songhub/rooms/${encodeURIComponent(code)}/playback/`, {
+      method: "POST",
+      body: payload,
+    }),
+  songHubRequest: (code: string, track: Track, note = "") =>
+    request<SongHubRequest>(`/songhub/rooms/${encodeURIComponent(code)}/requests/`, {
+      method: "POST",
+      body: { track, note },
+    }),
+  resolveSongHubRequest: (code: string, requestId: number, action: "accept" | "decline") =>
+    request<SongHubState>(
+      `/songhub/rooms/${encodeURIComponent(code)}/requests/${requestId}/resolve/`,
+      { method: "POST", body: { action } },
+    ),
+  sendSongHubMessage: (
+    code: string,
+    payload: { kind: "text" | "sticker"; body?: string; sticker?: string },
+  ) =>
+    request<SongHubMessage>(`/songhub/rooms/${encodeURIComponent(code)}/messages/`, {
+      method: "POST",
+      body: payload,
+    }),
+  sendSongHubReaction: (code: string, emoji: SongHubReactionKey) =>
+    request<SongHubReaction>(`/songhub/rooms/${encodeURIComponent(code)}/reactions/`, {
+      method: "POST",
+      body: { emoji },
+    }),
+  setSongHubMic: (code: string, micOn: boolean) =>
+    request<SongHubMember>(`/songhub/rooms/${encodeURIComponent(code)}/mic/`, {
+      method: "POST",
+      body: { mic_on: micOn },
+    }),
+  inviteToSongHub: (code: string, userId: number) =>
+    request<SongHubInvite>(`/songhub/rooms/${encodeURIComponent(code)}/invite/`, {
+      method: "POST",
+      body: { user_id: userId },
+    }),
+  songHubSignals: (code: string, after = 0) =>
+    request<{ items: SongHubSignal[]; last_id: number }>(
+      `/songhub/rooms/${encodeURIComponent(code)}/signals/${query({ after })}`,
+    ),
+  sendSongHubSignal: (
+    code: string,
+    payload: {
+      target_user_id: number;
+      kind: "offer" | "answer" | "candidate";
+      payload: Record<string, any>;
+    },
+  ) =>
+    request<{ id: number }>(`/songhub/rooms/${encodeURIComponent(code)}/signals/`, {
+      method: "POST",
+      body: payload,
+    }),
 };
 
 export { BASE as API_BASE };

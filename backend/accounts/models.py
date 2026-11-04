@@ -58,6 +58,20 @@ class Badge(models.Model):
         ("friends", "Friends"),
         ("public_playlists", "Public playlists"),
         ("saved_playlists", "Saved playlists"),
+        ("unique_tracks", "Unique tracks"),
+        ("distinct_artists", "Artists discovered"),
+        ("playlist_tracks", "Tracks in your playlists"),
+        ("playlists_created", "Playlists created"),
+        ("playlist_saves_received", "Playlist saves received"),
+        ("followed_artists", "Followed artists"),
+        ("listening_days", "Listening days"),
+        ("listening_streak", "Longest listening streak"),
+        ("night_plays", "Late-night plays"),
+        ("songhub_rooms", "Song Hubs created"),
+        ("songhub_visits", "Song Hub visits"),
+        ("songhub_messages", "Song Hub messages"),
+        ("songhub_reactions", "Song Hub reactions"),
+        ("songhub_requests", "Song requests"),
     )
 
     slug = models.SlugField(max_length=60, unique=True)

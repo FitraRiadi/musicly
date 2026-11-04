@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+const API_TARGET = process.env.VITE_PROXY_TARGET || "http://127.0.0.1:8000";
+
 export default defineConfig({
   plugins: [
     react(),
@@ -80,10 +82,10 @@ export default defineConfig({
     port: 5173,
     host: "0.0.0.0",
     proxy: {
-      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
-      "/media": { target: "http://127.0.0.1:8000", changeOrigin: true },
-      "/django-admin": { target: "http://127.0.0.1:8000", changeOrigin: true },
-      "/static": { target: "http://127.0.0.1:8000", changeOrigin: true },
+      "/api": { target: API_TARGET, changeOrigin: true },
+      "/media": { target: API_TARGET, changeOrigin: true },
+      "/django-admin": { target: API_TARGET, changeOrigin: true },
+      "/static": { target: API_TARGET, changeOrigin: true },
     },
   },
 });

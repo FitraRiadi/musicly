@@ -315,3 +315,102 @@ export interface AdminUserList {
   offset: number;
   items: AdminUser[];
 }
+
+export type SongHubRole = "host" | "member";
+export type SongHubReactionKey = "love" | "fire" | "laugh" | "party" | "drum";
+
+export interface SongHubUser {
+  id: number | null;
+  username: string;
+  name: string;
+  avatar: string | null;
+}
+
+export interface SongHubRoomSummary {
+  code: string;
+  name: string;
+  host: SongHubUser;
+  member_count: number;
+  max_members: number;
+  is_private: boolean;
+  has_password: boolean;
+  is_playing: boolean;
+  current_track: Track | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SongHubRoom extends SongHubRoomSummary {
+  position_seconds: number;
+  position_updated_at: string | null;
+}
+
+export interface SongHubMember {
+  id: number;
+  user: SongHubUser;
+  role: SongHubRole;
+  mic_on: boolean;
+  joined_at: string;
+  last_seen: string;
+}
+
+export interface SongHubRequest {
+  id: number;
+  user: SongHubUser;
+  track: Track;
+  note: string;
+  status: "pending" | "accepted" | "declined";
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface SongHubMessage {
+  id: number;
+  kind: "text" | "sticker" | "system";
+  body: string;
+  sticker: string;
+  user: SongHubUser | null;
+  created_at: string;
+}
+
+export interface SongHubReaction {
+  id: number;
+  emoji: SongHubReactionKey;
+  user: SongHubUser;
+  created_at: string;
+}
+
+export interface SongHubState {
+  room: SongHubRoom;
+  members: SongHubMember[];
+  me: {
+    membership_id: number;
+    role: SongHubRole;
+    mic_on: boolean;
+    is_host: boolean;
+  } | null;
+  requests: SongHubRequest[];
+  messages: SongHubMessage[];
+  reactions: SongHubReaction[];
+  server_time: string;
+}
+
+export interface SongHubInvite {
+  id: number;
+  room: SongHubRoomSummary;
+  inviter: SongHubUser;
+  created_at: string;
+}
+
+export interface SongHubLobby {
+  rooms: SongHubRoomSummary[];
+  my_room: SongHubRoomSummary | null;
+}
+
+export interface SongHubSignal {
+  id: number;
+  kind: "offer" | "answer" | "candidate";
+  from: SongHubUser;
+  payload: Record<string, any>;
+  created_at: string;
+}

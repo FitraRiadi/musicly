@@ -1,6 +1,7 @@
 from django.contrib.auth import login as session_login
 from django.contrib.auth import logout as session_logout
 from django.db.models import Count, Q
+from django.db.models.functions import ExtractHour, TruncDate
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -11,8 +12,16 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from catalog.models import LikedTrack, PlayHistory, Playlist, SavedPlaylist
+from catalog.models import (
+    FollowedArtist,
+    LikedTrack,
+    PlayHistory,
+    Playlist,
+    PlaylistTrack,
+    SavedPlaylist,
+)
 from catalog.serializers import PlaylistSerializer
+from songhub.models import ChatMessage, Reaction, SongHubMembership, SongHubRoom, SongRequest
 
 from .models import Badge, Friendship, User, UserBadge
 from .serializers import (
@@ -31,6 +40,26 @@ def tokens_for(user: User) -> dict:
     return {"access": str(refresh.access_token), "refresh": str(refresh)}
 
 
+def _listening_streak(user: User) -> int:
+    days = list(
+        PlayHistory.objects.filter(user=user)
+        .annotate(day=TruncDate("played_at"))
+        .values_list("day", flat=True)
+        .distinct()
+        .order_by("day")
+    )
+    if not days:
+        return 0
+    longest = current = 1
+    for previous, day in zip(days, days[1:]):
+        if (day - previous).days == 1:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 1
+    return longest
+
+
 def _metric_value(user: User, metric: str) -> int:
     if metric == "plays":
         return PlayHistory.objects.filter(user=user).count()
@@ -42,6 +71,57 @@ def _metric_value(user: User, metric: str) -> int:
         return Playlist.objects.filter(owner=user, is_public=True).count()
     if metric == "saved_playlists":
         return SavedPlaylist.objects.filter(user=user).count()
+    if metric == "unique_tracks":
+        return PlayHistory.objects.filter(user=user).values("track_id").distinct().count()
+    if metric == "distinct_artists":
+        return (
+            PlayHistory.objects.filter(user=user)
+            .exclude(track__artist_name="")
+            .values("track__artist_name")
+            .distinct()
+            .count()
+        )
+    if metric == "playlist_tracks":
+        return PlaylistTrack.objects.filter(playlist__owner=user).count()
+    if metric == "playlists_created":
+        return Playlist.objects.filter(owner=user).count()
+    if metric == "playlist_saves_received":
+        return (
+            SavedPlaylist.objects.filter(playlist__owner=user)
+            .exclude(user=user)
+            .count()
+        )
+    if metric == "followed_artists":
+        return FollowedArtist.objects.filter(user=user).count()
+    if metric == "listening_days":
+        return (
+            PlayHistory.objects.filter(user=user)
+            .annotate(day=TruncDate("played_at"))
+            .values("day")
+            .distinct()
+            .count()
+        )
+    if metric == "listening_streak":
+        return _listening_streak(user)
+    if metric == "night_plays":
+        return (
+            PlayHistory.objects.filter(user=user)
+            .annotate(hour=ExtractHour("played_at"))
+            .filter(Q(hour__gte=22) | Q(hour__lt=4))
+            .count()
+        )
+    if metric == "songhub_rooms":
+        return SongHubRoom.objects.filter(created_by=user).count()
+    if metric == "songhub_visits":
+        return SongHubMembership.objects.filter(user=user).count()
+    if metric == "songhub_messages":
+        return ChatMessage.objects.filter(
+            user=user, kind__in=[ChatMessage.Kind.TEXT, ChatMessage.Kind.STICKER]
+        ).count()
+    if metric == "songhub_reactions":
+        return Reaction.objects.filter(user=user).count()
+    if metric == "songhub_requests":
+        return SongRequest.objects.filter(user=user).count()
     return 0
 
 

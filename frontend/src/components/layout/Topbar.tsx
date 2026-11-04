@@ -12,6 +12,7 @@ import {
   Loader2,
   LogOut,
   Music2,
+  Radio,
   Search,
   Settings,
   ShieldCheck,
@@ -20,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
+import { SongHubIndicator } from "@/components/songhub/SongHubIndicator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuthStore } from "@/store/auth";
 import { useLibraryStore } from "@/store/library";
+import { useSongHubStore } from "@/store/songhub";
 import { useUiStore } from "@/store/ui";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useDebouncedValue } from "@/hooks/useUtils";
@@ -71,6 +74,7 @@ export function Topbar() {
   const userId = user?.id;
   const logout = useAuthStore((state) => state.logout);
   const resetLibrary = useLibraryStore((state) => state.reset);
+  const resetHub = useSongHubStore((state) => state.reset);
   const toast = useUiStore((state) => state.toast);
   const { canInstall, promptInstall } = useInstallPrompt();
 
@@ -314,6 +318,7 @@ export function Topbar() {
   const handleLogout = () => {
     logout();
     resetLibrary();
+    resetHub();
     toast("You're signed out. See you soon!", "success");
     navigate("/");
   };
@@ -493,6 +498,7 @@ export function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <SongHubIndicator compact />
         {user?.is_staff && (
           <Button asChild variant="ghost" size="icon" className="hidden md:inline-flex" title="Admin dashboard">
             <Link to="/admin">
@@ -537,6 +543,9 @@ export function Topbar() {
               )}
               <DropdownMenuItem onClick={() => navigate("/profile")}>
                 <UserIcon className="h-4 w-4" /> Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/song-hub")}>
+                <Radio className="h-4 w-4" /> Song Hub
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/dashboard")}>
                 <BarChart3 className="h-4 w-4" /> Listening dashboard

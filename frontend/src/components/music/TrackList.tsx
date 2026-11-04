@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   Plus,
+  Send,
   Share2,
   Trash2,
   User,
@@ -29,6 +30,7 @@ import { usePlayerStore } from "@/store/player";
 import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { useAuthStore } from "@/store/auth";
+import { useSongHubStore } from "@/store/songhub";
 import { useUiStore } from "@/store/ui";
 import type { Track } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
@@ -75,10 +77,18 @@ export function TrackList({
   const activeDownloads = useDownloadsStore((state) => state.active);
   const downloadForOffline = useDownloadsStore((state) => state.download);
   const removeDownload = useDownloadsStore((state) => state.remove);
+  const hubRoom = useSongHubStore((state) => state.room);
+  const hubMe = useSongHubStore((state) => state.me);
+  const requestTrackSelection = useSongHubStore((state) => state.requestTrackSelection);
+  const listenOnly = Boolean(hubRoom && hubMe?.role === "member");
 
   const currentId = queue[index]?.id;
 
   const handlePlay = (track: Track, i: number) => {
+    if (listenOnly) {
+      requestTrackSelection(track);
+      return;
+    }
     if (currentId === track.id) togglePlay();
     else playContext(tracks, i, context);
   };
@@ -158,13 +168,16 @@ export function TrackList({
           return (
             <div
               key={`${track.id}-${i}`}
-              onDoubleClick={() => playContext(tracks, i, context)}
+              onDoubleClick={() =>
+                listenOnly ? requestTrackSelection(track) : playContext(tracks, i, context)
+              }
               className="group grid grid-cols-[20px_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-white/[0.07] sm:grid-cols-[20px_minmax(0,1.6fr)_minmax(0,1fr)_36px_96px] sm:gap-4"
             >
               <button
                 onClick={() => handlePlay(track, i)}
                 className="flex h-5 w-5 items-center justify-center text-sm text-white/50"
-                aria-label={`Play ${track.title}`}
+                aria-label={`${listenOnly ? "Request" : "Play"} ${track.title}`}
+                title={listenOnly ? "Request this song from the host" : `Play ${track.title}`}
               >
                 {isCurrent ? (
                   <>
@@ -263,7 +276,10 @@ export function TrackList({
               <div className="flex items-center justify-end gap-1">
                 <button
                   onClick={() => playNext(track)}
-                  className="hidden rounded-full p-1.5 text-white/50 transition hover:text-white sm:block"
+                  className={cn(
+                    "hidden rounded-full p-1.5 text-white/50 transition hover:text-white sm:block",
+                    listenOnly && "sm:hidden",
+                  )}
                   aria-label="Play next"
                   title="Play next"
                 >
@@ -279,25 +295,33 @@ export function TrackList({
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuItem onClick={() => handlePlay(track, i)}>
-                      <Play className="h-4 w-4" /> Play
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        playNext(track);
-                        toast("Playing next", "success");
-                      }}
-                    >
-                      <ListStart className="h-4 w-4" /> Play next
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        addToQueue(track);
-                        toast("Added to queue", "success");
-                      }}
-                    >
-                      <ListPlus className="h-4 w-4" /> Add to queue
-                    </DropdownMenuItem>
+                    {listenOnly ? (
+                      <DropdownMenuItem onClick={() => requestTrackSelection(track)}>
+                        <Send className="h-4 w-4" /> Request to host
+                      </DropdownMenuItem>
+                    ) : (
+                      <>
+                        <DropdownMenuItem onClick={() => handlePlay(track, i)}>
+                          <Play className="h-4 w-4" /> Play
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            playNext(track);
+                            toast("Playing next", "success");
+                          }}
+                        >
+                          <ListStart className="h-4 w-4" /> Play next
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            addToQueue(track);
+                            toast("Added to queue", "success");
+                          }}
+                        >
+                          <ListPlus className="h-4 w-4" /> Add to queue
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     {!imported && (
                       <>
                         <DropdownMenuSeparator />
