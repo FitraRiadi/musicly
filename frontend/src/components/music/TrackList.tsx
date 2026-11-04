@@ -148,6 +148,7 @@ export function TrackList({
           const isCurrent = currentId === track.id;
           const downloaded = offlineItems.some((item) => item.id === track.id);
           const activeDownload = activeDownloads[track.id];
+          const imported = track.source === "imported";
           return (
             <div
               key={`${track.id}-${i}`}
@@ -187,45 +188,69 @@ export function TrackList({
                   </div>
                 )}
                 <div className="min-w-0">
-                  <Link
-                    to={`/track/${track.id}`}
-                    onClick={(event) => event.stopPropagation()}
-                    className={cn("block truncate text-[14px] font-medium hover:underline", isCurrent ? "text-primary" : "text-white")}
-                  >
-                    {track.title}
-                    {track.explicit && (
-                      <span className="ml-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-white/25 align-middle text-[8px] font-bold text-white/80">
-                        E
-                      </span>
-                    )}
-                    {downloaded && (
-                      <span className="ml-1.5 inline-flex align-middle" title="Available offline">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-                      </span>
-                    )}
-                  </Link>
-                  <Link
-                    to={`/artist/${track.artist.id}`}
-                    onClick={(event) => event.stopPropagation()}
-                    className="block truncate text-xs text-white/55 hover:text-white hover:underline"
-                  >
-                    {track.artist.name}
-                  </Link>
+                  {imported ? (
+                    <span className={cn("block truncate text-[14px] font-medium", isCurrent ? "text-primary" : "text-white")}>
+                      {track.title}
+                      {track.explicit && (
+                        <span className="ml-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-white/25 align-middle text-[8px] font-bold text-white/80">
+                          E
+                        </span>
+                      )}
+                      {downloaded && (
+                        <span className="ml-1.5 inline-flex align-middle" title="Available offline">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <Link
+                      to={`/track/${track.id}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className={cn("block truncate text-[14px] font-medium hover:underline", isCurrent ? "text-primary" : "text-white")}
+                    >
+                      {track.title}
+                      {track.explicit && (
+                        <span className="ml-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-white/25 align-middle text-[8px] font-bold text-white/80">
+                          E
+                        </span>
+                      )}
+                      {downloaded && (
+                        <span className="ml-1.5 inline-flex align-middle" title="Available offline">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                        </span>
+                      )}
+                    </Link>
+                  )}
+                  {imported ? (
+                    <span className="block truncate text-xs text-white/55">{track.artist.name}</span>
+                  ) : (
+                    <Link
+                      to={`/artist/${track.artist.id}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="block truncate text-xs text-white/55 hover:text-white hover:underline"
+                    >
+                      {track.artist.name}
+                    </Link>
+                  )}
                 </div>
               </div>
 
               {showAlbum && (
-                <Link
-                  to={`/album/${track.album.id}`}
-                  onClick={(event) => event.stopPropagation()}
-                  className="hidden truncate text-xs text-white/55 hover:text-white hover:underline lg:block"
-                >
-                  {track.album.title}
-                </Link>
+                imported ? (
+                  <span className="hidden truncate text-xs text-white/55 lg:block">{track.album.title}</span>
+                ) : (
+                  <Link
+                    to={`/album/${track.album.id}`}
+                    onClick={(event) => event.stopPropagation()}
+                    className="hidden truncate text-xs text-white/55 hover:text-white hover:underline lg:block"
+                  >
+                    {track.album.title}
+                  </Link>
+                )
               )}
 
               <div className="flex items-center gap-0.5">
-                <LikeButton track={track} size="sm" />
+                {!imported && <LikeButton track={track} size="sm" />}
                 <span className="w-9 text-right text-xs tabular-nums text-white/50">{formatDuration(track.duration)}</span>
               </div>
 
@@ -267,16 +292,21 @@ export function TrackList({
                     >
                       <ListPlus className="h-4 w-4" /> Add to queue
                     </DropdownMenuItem>
+                    {!imported && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => openAddToPlaylist(track)}>
+                          <Plus className="h-4 w-4" /> Add to playlist
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void handleLike(track)}>
+                          <Heart className="h-4 w-4" /> {useLibraryStore.getState().isLiked(track.id) ? "Remove from" : "Save to"} Liked Songs
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate(`/track/${track.id}`)}>
+                          <Music2 className="h-4 w-4" /> Go to song
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => openAddToPlaylist(track)}>
-                      <Plus className="h-4 w-4" /> Add to playlist
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => void handleLike(track)}>
-                      <Heart className="h-4 w-4" /> {useLibraryStore.getState().isLiked(track.id) ? "Remove from" : "Save to"} Liked Songs
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate(`/track/${track.id}`)}>
-                      <Music2 className="h-4 w-4" /> Go to song
-                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => void handleOfflineDownload(track)}
                       disabled={activeDownload?.status === "downloading"}
@@ -284,7 +314,11 @@ export function TrackList({
                       {activeDownload?.status === "downloading" ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : downloaded ? (
-                        <CheckCircle2 className="h-4 w-4 text-primary" />
+                        imported ? (
+                          <Trash2 className="h-4 w-4" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                        )
                       ) : (
                         <Download className="h-4 w-4" />
                       )}
@@ -294,28 +328,32 @@ export function TrackList({
                           ? "Remove download"
                           : "Download for offline"}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDownload(track)}>
-                      <FileDown className="h-4 w-4" /> Save audio file
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => navigate(`/artist/${track.artist.id}`)}>
-                      <User className="h-4 w-4" /> Go to artist
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate(`/album/${track.album.id}`)}>
-                      <Disc3 className="h-4 w-4" /> Go to album
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(`${window.location.origin}/track/${track.id}`);
-                          toast("Song link copied to clipboard", "success");
-                        } catch {
-                          toast("Could not copy the link.", "error");
-                        }
-                      }}
-                    >
-                      <Share2 className="h-4 w-4" /> Copy song link
-                    </DropdownMenuItem>
+                    {!imported && (
+                      <>
+                        <DropdownMenuItem onClick={() => handleDownload(track)}>
+                          <FileDown className="h-4 w-4" /> Save audio file
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => navigate(`/artist/${track.artist.id}`)}>
+                          <User className="h-4 w-4" /> Go to artist
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate(`/album/${track.album.id}`)}>
+                          <Disc3 className="h-4 w-4" /> Go to album
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(`${window.location.origin}/track/${track.id}`);
+                              toast("Song link copied to clipboard", "success");
+                            } catch {
+                              toast("Could not copy the link.", "error");
+                            }
+                          }}
+                        >
+                          <Share2 className="h-4 w-4" /> Copy song link
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     {onRemove && (
                       <>
                         <DropdownMenuSeparator />

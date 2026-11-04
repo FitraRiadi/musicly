@@ -102,7 +102,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     };
 
     syncMediaSession(track);
-    reportHistory(track, get().context);
+    if (track.source !== "imported") reportHistory(track, get().context);
 
     getOfflineAudio(track.id)
       .then((blob) => {
@@ -139,7 +139,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
     playContext: (tracks, startIndex, context = "") => {
       const playable = tracks.filter(
-        (track) => Boolean(track.preview || (track.has_full_audio && track.stream_url)),
+        (track) =>
+          track.source === "imported" ||
+          Boolean(track.preview || (track.has_full_audio && track.stream_url)),
       );
       if (!playable.length) return;
       const target = tracks[startIndex];
@@ -162,7 +164,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     playTrack: (track, context = "") => {
-      if (!track.preview && !(track.has_full_audio && track.stream_url)) return;
+      if (track.source !== "imported" && !track.preview && !(track.has_full_audio && track.stream_url)) return;
       const existing = get().queue.findIndex((item) => item.id === track.id);
       if (existing >= 0) {
         set({ index: existing, isPlaying: true });

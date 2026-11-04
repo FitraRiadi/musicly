@@ -23,6 +23,8 @@ export function LikeButton({
   const toast = useUiStore((state) => state.toast);
   const navigate = useNavigate();
 
+  if (track.source === "imported") return null;
+
   const onClick = async (event: React.MouseEvent) => {
     if (stopPropagation) {
       event.preventDefault();

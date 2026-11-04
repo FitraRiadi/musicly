@@ -12,7 +12,7 @@ A full-stack Spotify-style music app with a Deezer-powered catalog, on-demand fu
 - **Discover** - personalized greeting, recently played quick picks, charts, an editorial alt and indie spotlight, genre browsing, and live search across tracks, artists, albums, playlists, and genres.
 - **Play** - persistent player with a drag-to-reorder queue, shuffle, repeat, seek, volume, media-session integration, and a full-screen mobile player. Licensed local audio is used when available; otherwise Musicly streams the full track on demand through an optional local ytmp3 bridge, and falls back to Deezer's 30-second preview when the bridge is unavailable.
 - **Download** - use **Save audio file** from the song action menu. Django sends the full track as an attachment and the browser's download manager chooses the destination, so there is no folder picker and nothing is stored on the server.
-- **Offline downloads** - use **Download for offline** from any song, album, playlist, or Liked Songs page. Musicly stores the audio and track metadata in IndexedDB, lists them on `/downloads`, and plays the local blob before making any stream request. The page includes playback, shuffle, per-track removal, storage totals, and clear-all.
+- **Offline downloads** - use **Download for offline** from any song, album, playlist, or Liked Songs page, or use **Import songs** on `/downloads` to add audio files already stored on your device. Musicly stores the audio and track metadata in IndexedDB, lists them on `/downloads`, and plays the local blob before making any stream request. The page includes playback, shuffle, per-track removal, storage totals, and clear-all.
 - **Lyrics** - on-demand synced or plain lyrics with active-line highlighting and auto-scroll. Lyrics are cached in PostgreSQL after the first lookup.
 - **Collect** - like songs, create and edit playlists, reorder tracks, and follow artists.
 - **Analytics** - listening totals, minutes, unique tracks, top artists, most-played tracks, and activity charts built with Tremor and Recharts.
@@ -122,6 +122,8 @@ The browser -> Musicly -> scraper -> googlevideo path never writes audio to disk
 The **Download** action uses the same source but requests `/api/tracks/<id>/download/`. Django adds an attachment filename such as `Artist - Title.m4a` (or `.mp3` for uploaded local audio) and streams the bytes through. The browser handles the actual save, so the system's default Downloads location is used and Musicly never asks for or hardcodes a folder.
 
 The separate **Download for offline** action requests the same public endpoint but reads the response as a blob and stores it in IndexedDB with the track metadata. The player checks IndexedDB before using a remote stream URL, so downloaded songs keep working when the API, bridge, or internet is unavailable. Browser file downloads and the OS Downloads folder are intentionally separate because a web app cannot read files the browser saved outside its own storage. The `/downloads` page is public and local-only so it still opens when authentication cannot be checked.
+
+**Import songs** opens the browser file picker and accepts common audio files such as MP3, M4A, AAC, WAV, OGG, Opus, FLAC, and WebM. Imported files never leave the device; Musicly reads their duration, stores the file in IndexedDB, and uses the file name as metadata (for example `Artist - Title.mp3` becomes artist and title). They then behave like offline downloads and are removed with **Remove download** or **Clear all**.
 
 Then run migrations, seed demo data, and start Django:
 

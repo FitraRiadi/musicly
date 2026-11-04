@@ -23,6 +23,7 @@ export function MobileNowPlaying() {
   const track = queue[index];
 
   if (!open || !track) return null;
+  const imported = track.source === "imported";
   const pct = duration ? (progress / duration) * 100 : 0;
 
   return (
@@ -57,12 +58,20 @@ export function MobileNowPlaying() {
           />
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <Link to={`/track/${track.id}`} className="line-clamp-2 text-2xl font-bold leading-tight">
-                {track.title}
-              </Link>
-              <Link to={`/artist/${track.artist.id}`} className="mt-1 block truncate text-base text-white/70">
-                {track.artist.name}
-              </Link>
+              {imported ? (
+                <span className="line-clamp-2 text-2xl font-bold leading-tight">{track.title}</span>
+              ) : (
+                <Link to={`/track/${track.id}`} className="line-clamp-2 text-2xl font-bold leading-tight">
+                  {track.title}
+                </Link>
+              )}
+              {imported ? (
+                <span className="mt-1 block truncate text-base text-white/70">{track.artist.name}</span>
+              ) : (
+                <Link to={`/artist/${track.artist.id}`} className="mt-1 block truncate text-base text-white/70">
+                  {track.artist.name}
+                </Link>
+              )}
             </div>
             <LikeButton track={track} />
           </div>

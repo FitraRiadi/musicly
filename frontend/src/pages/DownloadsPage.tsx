@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Download, HardDrive, Loader2, Play, Shuffle, Trash2 } from "lucide-react";
+import { CheckCircle2, Download, HardDrive, Loader2, Play, Shuffle, Trash2, Upload } from "lucide-react";
 import { TrackList } from "@/components/music/TrackList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,12 @@ export function DownloadsPage() {
   const loaded = useDownloadsStore((state) => state.loaded);
   const load = useDownloadsStore((state) => state.load);
   const clear = useDownloadsStore((state) => state.clear);
+  const importFiles = useDownloadsStore((state) => state.importFiles);
   const playContext = usePlayerStore((state) => state.playContext);
   const toast = useUiStore((state) => state.toast);
   const online = useOnlineStatus();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     void load();
@@ -38,6 +41,31 @@ export function DownloadsPage() {
       toast("Downloads cleared", "success");
     } catch {
       toast("Could not clear downloads.", "error");
+    }
+  };
+
+  const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length || importing) return;
+
+    setImporting(true);
+    try {
+      const result = await importFiles(files);
+      if (result.failed > 0) {
+        toast(`Imported ${result.imported} songs, ${result.failed} failed.`, "error");
+      } else if (result.imported > 0) {
+        toast(
+          `Imported ${result.imported} ${result.imported === 1 ? "song" : "songs"} to Downloads.`,
+          "success",
+        );
+      } else {
+        toast("No supported audio files were selected.", "error");
+      }
+    } catch {
+      toast("Could not import audio files.", "error");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -92,6 +120,24 @@ export function DownloadsPage() {
           >
             <Shuffle className="h-5 w-5" />
           </button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {importing ? "Importing…" : "Import songs"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.opus,.flac,.webm"
+            multiple
+            className="hidden"
+            onChange={(event) => void handleImport(event)}
+          />
           {items.length > 0 && (
             <Button
               variant="ghost"
@@ -158,11 +204,18 @@ export function DownloadsPage() {
             </div>
             <p className="text-lg font-bold">No downloads yet</p>
             <p className="max-w-sm text-sm text-white/45">
-              Open a song menu and choose <span className="font-medium text-white/70">Download for offline</span>. Downloaded songs stay on this device and play without internet.
+              Open a song menu and choose <span className="font-medium text-white/70">Download for offline</span>, or use{" "}
+              <span className="font-medium text-white/70">Import songs</span> to add audio files from this device.
             </p>
-            <Button asChild variant="secondary" className="mt-2">
-              <Link to="/search">Find songs to download</Link>
-            </Button>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              <Button asChild variant="secondary">
+                <Link to="/search">Find songs to download</Link>
+              </Button>
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                Import songs
+              </Button>
+            </div>
           </div>
         )}
       </div>

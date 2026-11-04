@@ -111,6 +111,7 @@ export function QueuePanel() {
           if (i <= index) return null;
           const isDragging = draggedIndex === i;
           const isDropTarget = dropTarget === i && draggedIndex !== null && draggedIndex !== i;
+          const imported = track.source === "imported";
           return (
             <div
               key={`${track.id}-${i}`}
@@ -140,10 +141,17 @@ export function QueuePanel() {
                   <Play className="h-3.5 w-3.5 fill-current" />
                 </span>
               </button>
-              <Link to={`/track/${track.id}`} className="min-w-0 flex-1">
-                <p className="truncate text-sm">{track.title}</p>
-                <p className="truncate text-xs text-white/50">{track.artist.name}</p>
-              </Link>
+              {imported ? (
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{track.title}</p>
+                  <p className="truncate text-xs text-white/50">{track.artist.name}</p>
+                </div>
+              ) : (
+                <Link to={`/track/${track.id}`} className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{track.title}</p>
+                  <p className="truncate text-xs text-white/50">{track.artist.name}</p>
+                </Link>
+              )}
               <button
                 onClick={() => removeFromQueue(i)}
                 className="rounded p-1 text-white/40 opacity-0 transition hover:text-white group-hover:opacity-100"

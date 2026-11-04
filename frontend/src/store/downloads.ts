@@ -2,6 +2,8 @@ import { create } from "zustand";
 import {
   clearOfflineTracks,
   downloadTrackForOffline,
+  importAudioFile,
+  isSupportedAudioFile,
   listOfflineTracks,
   removeOfflineTrack,
   type OfflineTrack,
@@ -23,6 +25,7 @@ interface DownloadsState {
   load: () => Promise<void>;
   download: (track: Track) => Promise<boolean>;
   downloadMany: (tracks: Track[]) => Promise<{ downloaded: number; skipped: number; failed: number }>;
+  importFiles: (files: File[]) => Promise<{ imported: number; skipped: number; failed: number }>;
   remove: (id: string) => Promise<void>;
   clear: () => Promise<void>;
   isDownloaded: (id: string) => boolean;
@@ -117,6 +120,29 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
         const didDownload = await get().download(track);
         if (didDownload) result.downloaded += 1;
         else result.skipped += 1;
+      } catch {
+        result.failed += 1;
+      }
+    }
+    return result;
+  },
+
+  importFiles: async (files) => {
+    const result = { imported: 0, skipped: 0, failed: 0 };
+    if (!get().loaded) await get().load();
+
+    for (const file of files) {
+      if (!isSupportedAudioFile(file)) {
+        result.skipped += 1;
+        continue;
+      }
+      try {
+        const entry = await importAudioFile(file);
+        set((state) => ({
+          items: [entry, ...state.items.filter((item) => item.id !== entry.id)],
+          loaded: true,
+        }));
+        result.imported += 1;
       } catch {
         result.failed += 1;
       }

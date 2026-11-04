@@ -89,6 +89,7 @@ export function PlayerBar() {
   } = usePlayerStore();
   const setMobilePlayerOpen = useUiStore((state) => state.setMobilePlayerOpen);
   const track = queue[index];
+  const imported = track?.source === "imported";
 
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
@@ -99,26 +100,44 @@ export function PlayerBar() {
       {/* Desktop player */}
       <footer className="hidden h-[90px] items-center gap-4 border-t border-white/[0.07] bg-black/95 px-4 md:flex">
         <div className="flex w-[30%] min-w-0 items-center gap-3">
-          <Link to={`/album/${track.album.id}`} className="group relative shrink-0">
-            <img
-              src={track.album.cover_small || track.album.cover}
-              alt={track.album.title}
-              className="h-14 w-14 rounded-md object-cover"
-            />
-            <span className="absolute inset-0 flex items-center justify-center rounded-md bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
-              <Maximize2 className="h-4 w-4" />
-            </span>
-          </Link>
+          {imported ? (
+            <div className="relative shrink-0">
+              <img
+                src={track.album.cover_small || track.album.cover}
+                alt={track.album.title}
+                className="h-14 w-14 rounded-md object-cover"
+              />
+            </div>
+          ) : (
+            <Link to={`/album/${track.album.id}`} className="group relative shrink-0">
+              <img
+                src={track.album.cover_small || track.album.cover}
+                alt={track.album.title}
+                className="h-14 w-14 rounded-md object-cover"
+              />
+              <span className="absolute inset-0 flex items-center justify-center rounded-md bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+                <Maximize2 className="h-4 w-4" />
+              </span>
+            </Link>
+          )}
           <div className="min-w-0 flex-1">
-            <Link to={`/track/${track.id}`} className="block truncate text-sm font-medium hover:underline">
-              {track.title}
-            </Link>
-            <Link
-              to={`/artist/${track.artist.id}`}
-              className="block min-w-0 truncate text-xs text-white/55 hover:text-white hover:underline"
-            >
-              {track.artist.name}
-            </Link>
+            {imported ? (
+              <span className="block truncate text-sm font-medium">{track.title}</span>
+            ) : (
+              <Link to={`/track/${track.id}`} className="block truncate text-sm font-medium hover:underline">
+                {track.title}
+              </Link>
+            )}
+            {imported ? (
+              <span className="block min-w-0 truncate text-xs text-white/55">{track.artist.name}</span>
+            ) : (
+              <Link
+                to={`/artist/${track.artist.id}`}
+                className="block min-w-0 truncate text-xs text-white/55 hover:text-white hover:underline"
+              >
+                {track.artist.name}
+              </Link>
+            )}
           </div>
           <LikeButton track={track} />
         </div>
