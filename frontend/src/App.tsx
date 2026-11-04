@@ -13,6 +13,7 @@ import { LikedSongsPage } from "@/pages/LikedSongsPage";
 import { DownloadsPage } from "@/pages/DownloadsPage";
 import { GenrePage } from "@/pages/GenrePage";
 import { ProfilePage } from "@/pages/ProfilePage";
+import { UserProfilePage } from "@/pages/UserProfilePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -108,6 +109,7 @@ export default function App() {
             <Route path="album/:id" element={<AlbumPage />} />
             <Route path="artist/:id" element={<ArtistPage />} />
             <Route path="playlist/:id" element={<PlaylistPage />} />
+            <Route path="user/:username" element={<UserProfilePage />} />
             <Route path="genre/:id" element={<GenrePage />} />
             <Route path="liked" element={<LikedSongsPage />} />
             <Route path="downloads" element={<DownloadsPage />} />

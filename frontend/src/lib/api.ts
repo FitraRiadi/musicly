@@ -5,6 +5,9 @@ import type {
   AdminUserList,
   Album,
   Artist,
+  Badge,
+  FriendList,
+  FriendshipState,
   Genre,
   HistoryItem,
   HomeSection,
@@ -13,6 +16,8 @@ import type {
   LikeItem,
   Lyrics,
   Playlist,
+  PublicProfile,
+  PublicUser,
   SearchResults,
   SearchSuggestions,
   Track,
@@ -190,6 +195,35 @@ export const api = {
     });
   },
 
+  // People and social
+  searchUsers: (q: string, limit = 20) =>
+    request<{ items: PublicUser[]; count: number; query: string }>(
+      `/auth/users/${query({ q, limit })}`,
+    ),
+  publicProfile: (username: string) =>
+    request<PublicProfile>(`/auth/users/${encodeURIComponent(username)}/`),
+  friends: () => request<FriendList>("/auth/friends/"),
+  sendFriendRequest: (userId: number) =>
+    request<FriendshipState>("/auth/friends/requests/", {
+      method: "POST",
+      body: { user_id: userId },
+    }),
+  acceptFriendRequest: (requestId: number) =>
+    request<FriendshipState>(`/auth/friends/requests/${requestId}/accept/`, {
+      method: "POST",
+    }),
+  declineFriendRequest: (requestId: number) =>
+    request<FriendshipState>(`/auth/friends/requests/${requestId}/decline/`, {
+      method: "POST",
+    }),
+  removeFriend: (userId: number) =>
+    request<FriendshipState>(`/auth/friends/${userId}/`, { method: "DELETE" }),
+  badges: () => request<{ items: Badge[] }>("/auth/badges/"),
+  collectBadge: (slug: string) =>
+    request<Badge>(`/auth/badges/${encodeURIComponent(slug)}/collect/`, {
+      method: "POST",
+    }),
+
   // Staff dashboard
   adminOverview: () => request<AdminOverview>("/admin/overview/"),
   adminTracks: (params: {
@@ -254,6 +288,16 @@ export const api = {
     });
   },
   deletePlaylist: (id: string | number) => request<void>(`/playlists/${id}/`, { method: "DELETE" }),
+  savePlaylist: (id: string | number) =>
+    request<{ saved: boolean; saves_count: number }>(`/playlists/${id}/save/`, {
+      method: "POST",
+    }),
+  unsavePlaylist: (id: string | number) =>
+    request<{ saved: boolean; saves_count: number }>(`/playlists/${id}/save/`, {
+      method: "DELETE",
+    }),
+  publicPlaylists: (params: { q?: string; limit?: number } = {}) =>
+    request<{ items: Playlist[] }>(`/playlists/public/${query(params)}`, { auth: false }),
   addTracks: (id: string | number, trackIds: string[]) =>
     request<{ added: number; playlist: Playlist }>(`/playlists/${id}/tracks/`, {
       method: "POST",

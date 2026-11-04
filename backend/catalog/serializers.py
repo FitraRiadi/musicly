@@ -1,7 +1,7 @@
 from django.conf import settings
 from rest_framework import serializers
 
-from .models import FollowedArtist, LikedTrack, PlayHistory, Playlist, PlaylistTrack, Track
+from .models import FollowedArtist, LikedTrack, PlayHistory, Playlist, PlaylistTrack, SavedPlaylist, Track
 
 
 def _stream_enabled() -> bool:
@@ -150,12 +150,16 @@ class PlaylistSerializer(serializers.ModelSerializer):
     cover = serializers.SerializerMethodField()
     tracks = serializers.SerializerMethodField()
     duration = serializers.SerializerMethodField()
+    saves_count = serializers.SerializerMethodField()
+    saved = serializers.SerializerMethodField()
+    is_owner = serializers.SerializerMethodField()
 
     class Meta:
         model = Playlist
         fields = [
             "id", "name", "description", "cover", "is_public", "is_collaborative",
             "owner", "nb_tracks", "duration", "tracks", "created_at", "updated_at", "source",
+            "saves_count", "saved", "is_owner",
         ]
 
     source = serializers.SerializerMethodField()
@@ -169,10 +173,16 @@ class PlaylistSerializer(serializers.ModelSerializer):
         if obj.owner.avatar:
             url = obj.owner.avatar.url
             avatar = request.build_absolute_uri(url) if request else url
-        return {"id": obj.owner_id, "name": obj.owner.name, "avatar": avatar}
+        return {
+            "id": obj.owner_id,
+            "name": obj.owner.name,
+            "username": obj.owner.username,
+            "avatar": avatar,
+        }
 
     def get_nb_tracks(self, obj):
-        return getattr(obj, "nb_tracks", None) or obj.entries.count()
+        value = getattr(obj, "nb_tracks", None)
+        return value if value is not None else obj.entries.count()
 
     def get_duration(self, obj):
         return sum(entry.track.duration for entry in obj.entries.select_related("track"))
@@ -203,6 +213,24 @@ class PlaylistSerializer(serializers.ModelSerializer):
             }
             for entry in entries
         ]
+
+    def get_saves_count(self, obj):
+        value = getattr(obj, "saves_count", None)
+        return value if value is not None else obj.saves.count()
+
+    def get_saved(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        return SavedPlaylist.objects.filter(user=request.user, playlist=obj).exists()
+
+    def get_is_owner(self, obj):
+        request = self.context.get("request")
+        return bool(
+            request
+            and request.user.is_authenticated
+            and obj.owner_id == request.user.id
+        )
 
 
 class LikeSerializer(serializers.ModelSerializer):

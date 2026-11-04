@@ -2,16 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Clock, Play, Search as SearchIcon, TrendingUp, X } from "lucide-react";
 import { api } from "@/lib/api";
-import type { Album, Artist, Genre, Playlist, SearchResults, Track } from "@/lib/types";
+import type { Album, Artist, Genre, Playlist, PublicUser, SearchResults, Track } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
 import { MediaCard } from "@/components/music/MediaCard";
+import { UserCard } from "@/components/social/UserCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/store/auth";
 import { usePlayerStore } from "@/store/player";
 import { useUiStore } from "@/store/ui";
 import { cn, gradientFromString, timeAgo } from "@/lib/utils";
 
-type SearchType = "all" | "track" | "artist" | "album" | "playlist";
+type SearchType = "all" | "track" | "artist" | "album" | "playlist" | "user";
 
 const searchTabs: { id: SearchType; label: string }[] = [
   { id: "all", label: "All" },
@@ -19,6 +20,7 @@ const searchTabs: { id: SearchType; label: string }[] = [
   { id: "artist", label: "Artists" },
   { id: "album", label: "Albums" },
   { id: "playlist", label: "Playlists" },
+  { id: "user", label: "People" },
 ];
 
 function normalizeTypedResults(data: SearchResults, type: Exclude<SearchType, "all">): SearchResults {
@@ -29,6 +31,7 @@ function normalizeTypedResults(data: SearchResults, type: Exclude<SearchType, "a
     artists: type === "artist" ? (items as Artist[]) : [],
     albums: type === "album" ? (items as Album[]) : [],
     playlists: type === "playlist" ? (items as Playlist[]) : [],
+    users: type === "user" ? ((data.users || items) as PublicUser[]) : [],
   };
 }
 
@@ -91,7 +94,11 @@ export function SearchPage() {
   }, [results]);
 
   const hasResults = Boolean(
-    results?.tracks?.length || results?.artists?.length || results?.albums?.length || results?.playlists?.length,
+    results?.tracks?.length ||
+      results?.artists?.length ||
+      results?.albums?.length ||
+      results?.playlists?.length ||
+      results?.users?.length,
   );
   const topHref = top
     ? top.kind === "artist"
@@ -311,6 +318,20 @@ export function SearchPage() {
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 {(type === "playlist" ? results.playlists : results.playlists.slice(0, 5)).map((playlist) => (
                   <MediaCard key={playlist.id} item={playlist} kind="playlist" />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {results?.users && results.users.length > 0 && (
+            <section className="mt-10">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-bold">People</h2>
+                <span className="text-[11px] text-white/40">{results.users.length} listeners</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {(type === "user" ? results.users : results.users.slice(0, 6)).map((person) => (
+                  <UserCard key={person.id} user={person} />
                 ))}
               </div>
             </section>

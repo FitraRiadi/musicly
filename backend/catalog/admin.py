@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import FollowedArtist, LikedTrack, PlayHistory, Playlist, PlaylistTrack, Track
+from .models import FollowedArtist, LikedTrack, PlayHistory, Playlist, PlaylistTrack, SavedPlaylist, Track
 
 
 @admin.register(Track)
@@ -85,3 +85,4 @@ class PlaylistAdmin(admin.ModelAdmin):
 admin.site.register(LikedTrack)
 admin.site.register(PlayHistory)
 admin.site.register(FollowedArtist)
+admin.site.register(SavedPlaylist)

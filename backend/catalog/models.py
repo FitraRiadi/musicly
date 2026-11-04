@@ -78,6 +78,25 @@ class PlaylistTrack(models.Model):
         ]
 
 
+class SavedPlaylist(models.Model):
+    """A public playlist saved by another listener."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_playlists"
+    )
+    playlist = models.ForeignKey(Playlist, on_delete=models.CASCADE, related_name="saves")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "playlist"], name="unique_saved_playlist"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user} saved {self.playlist}"
+
+
 class LikedTrack(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="likes")
     track = models.ForeignKey(Track, on_delete=models.CASCADE, related_name="likes")

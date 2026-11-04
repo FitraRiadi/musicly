@@ -6,6 +6,7 @@ interface LibraryState {
   liked: Record<string, Track>;
   followed: Record<string, { id: string; name: string; picture: string }>;
   playlists: Playlist[];
+  savedPlaylists: Playlist[];
   loaded: boolean;
   load: () => Promise<void>;
   reset: () => void;
@@ -21,6 +22,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   liked: {},
   followed: {},
   playlists: [],
+  savedPlaylists: [],
   loaded: false,
 
   load: async () => {
@@ -38,13 +40,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           picture: artist.picture_url,
         };
       });
-      set({ liked, followed, playlists: data.playlists, loaded: true });
+      set({
+        liked,
+        followed,
+        playlists: data.playlists,
+        savedPlaylists: data.saved_playlists || [],
+        loaded: true,
+      });
     } catch {
       set({ loaded: true });
     }
   },
 
-  reset: () => set({ liked: {}, followed: {}, playlists: [], loaded: false }),
+  reset: () =>
+    set({ liked: {}, followed: {}, playlists: [], savedPlaylists: [], loaded: false }),
 
   isLiked: (trackId) => Boolean(get().liked[trackId]),
 

@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  Bookmark,
+  BookmarkCheck,
   CheckCircle2,
   Clock3,
   Database,
   Download,
   Ellipsis,
+  Globe2,
+  ImagePlus,
   Link2,
   Loader2,
+  Lock,
   Pencil,
   Play,
   Plus,
@@ -52,9 +57,11 @@ export function PlaylistPage() {
   const toast = useUiStore((state) => state.toast);
   const playContext = usePlayerStore((state) => state.playContext);
   const refreshPlaylists = useLibraryStore((state) => state.refreshPlaylists);
+  const loadLibrary = useLibraryStore((state) => state.load);
   const downloadMany = useDownloadsStore((state) => state.downloadMany);
   const offlineItems = useDownloadsStore((state) => state.items);
   const activeDownloads = useDownloadsStore((state) => state.active);
+  const coverRef = useRef<HTMLInputElement | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
@@ -62,7 +69,19 @@ export function PlaylistPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [isPublic, setIsPublic] = useState(true);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingSaved, setSavingSaved] = useState(false);
+
+  const clearCoverPreview = () => {
+    setCoverFile(null);
+    setCoverPreview((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return null;
+    });
+  };
 
   const load = () => {
     if (!id) return;
@@ -74,12 +93,53 @@ export function PlaylistPage() {
         setPlaylist(data);
         setName(data.name);
         setDescription(data.description || "");
+        setIsPublic(data.is_public !== false);
       })
       .catch((err) => setError({ message: err?.message || "Playlist not found.", status: err?.status }))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [id]);
+
+  const pickCover = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCoverFile(file);
+    setCoverPreview((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const openEdit = () => {
+    if (!playlist) return;
+    setName(playlist.name);
+    setDescription(playlist.description || "");
+    setIsPublic(playlist.is_public !== false);
+    clearCoverPreview();
+    setEditOpen(true);
+  };
+
+  const toggleSaved = async () => {
+    if (!playlist) return;
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    setSavingSaved(true);
+    try {
+      const result = playlist.saved
+        ? await api.unsavePlaylist(playlist.id)
+        : await api.savePlaylist(playlist.id);
+      setPlaylist({ ...playlist, saved: result.saved, saves_count: result.saves_count });
+      await loadLibrary();
+      toast(result.saved ? "Playlist saved to your library" : "Removed from saved playlists", "success");
+    } catch (err: any) {
+      toast(err?.message || "Could not update saved playlists.", "error");
+    } finally {
+      setSavingSaved(false);
+    }
+  };
 
   const isOwner = Boolean(playlist && user && playlist.owner?.id === user.id);
   const tracks = (playlist?.tracks || []).map((entry) => entry.track);
@@ -111,10 +171,20 @@ export function PlaylistPage() {
     if (!playlist) return;
     setSaving(true);
     try {
-      const updated = await api.updatePlaylist(playlist.id, { name, description });
-      setPlaylist({ ...playlist, ...updated });
+      let updated = await api.updatePlaylist(playlist.id, {
+        name,
+        description,
+        is_public: isPublic,
+      });
+      if (coverFile) {
+        const form = new FormData();
+        form.append("cover", coverFile);
+        updated = await api.updatePlaylist(playlist.id, form);
+      }
+      setPlaylist(updated);
       await refreshPlaylists();
       setEditOpen(false);
+      clearCoverPreview();
       toast("Playlist updated", "success");
     } catch (err: any) {
       toast(err?.message || "Could not update the playlist.", "error");
@@ -227,6 +297,11 @@ export function PlaylistPage() {
               )}
               <span className="text-white/50">· {tracks.length} songs</span>
               {totalSeconds > 0 && <span className="text-white/50">· {formatLongDuration(totalSeconds)}</span>}
+              {!isDeezer && playlist.is_public && (
+                <span className="text-white/50">
+                  · {formatCount(playlist.saves_count || 0)} {playlist.saves_count === 1 ? "save" : "saves"}
+                </span>
+              )}
               {playlist.updated_at && !isDeezer && (
                 <span className="text-white/40">· updated {timeAgo(playlist.updated_at)}</span>
               )}
@@ -255,6 +330,28 @@ export function PlaylistPage() {
             <Button variant="outline" onClick={() => navigate("/search")} className="gap-2">
               <Plus className="h-4 w-4" /> Add songs
             </Button>
+          )}
+          {!isDeezer && !isOwner && playlist.is_public && (
+            <Button
+              variant={playlist.saved ? "secondary" : "outline"}
+              onClick={() => void toggleSaved()}
+              disabled={savingSaved}
+              className="gap-2"
+            >
+              {savingSaved ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : playlist.saved ? (
+                <BookmarkCheck className="h-4 w-4" />
+              ) : (
+                <Bookmark className="h-4 w-4" />
+              )}
+              {playlist.saved ? "Saved" : "Save"}
+            </Button>
+          )}
+          {!isDeezer && !playlist.is_public && !isOwner && (
+            <Badge variant="secondary" className="gap-1">
+              <Lock className="h-3 w-3" /> Private
+            </Badge>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -296,7 +393,7 @@ export function PlaylistPage() {
               {!isDeezer && isOwner && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                  <DropdownMenuItem onClick={openEdit}>
                     <Pencil className="h-4 w-4" /> Edit details
                   </DropdownMenuItem>
                   <DropdownMenuItem className="text-red-300" onClick={() => setDeleteOpen(true)}>
@@ -339,9 +436,35 @@ export function PlaylistPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit playlist</DialogTitle>
-            <DialogDescription>Update the name and description of your collection.</DialogDescription>
+            <DialogDescription>Update the artwork, visibility and details of your collection.</DialogDescription>
           </DialogHeader>
           <form onSubmit={saveEdit} className="space-y-4">
+            <div className="flex items-center gap-4 rounded-xl bg-white/[0.04] p-3">
+              <button
+                type="button"
+                onClick={() => coverRef.current?.click()}
+                className="group relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-white/20 to-white/5"
+                aria-label="Change playlist cover"
+              >
+                {coverPreview || playlist.cover ? (
+                  <img
+                    src={coverPreview || playlist.cover}
+                    alt="Playlist cover"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <ImagePlus className="h-6 w-6 text-white/60" />
+                )}
+                <span className="absolute inset-0 flex items-center justify-center bg-black/55 opacity-0 transition group-hover:opacity-100">
+                  <ImagePlus className="h-5 w-5 text-white" />
+                </span>
+              </button>
+              <input ref={coverRef} type="file" accept="image/*" className="hidden" onChange={pickCover} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{name || playlist.name}</p>
+                <p className="text-xs text-white/50">Click the artwork to change the cover</p>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="edit-name">Name</Label>
               <Input id="edit-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={140} />
@@ -354,6 +477,34 @@ export function PlaylistPage() {
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={400}
               />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <div>
+                <Label>Visibility</Label>
+                <p className="mt-0.5 text-[11px] text-white/40">
+                  {isPublic ? "Anyone can find and save this playlist." : "Only you can open this playlist."}
+                </p>
+              </div>
+              <div className="flex shrink-0 rounded-full bg-black/30 p-1">
+                <button
+                  type="button"
+                  onClick={() => setIsPublic(true)}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+                    isPublic ? "bg-white text-black" : "text-white/55 hover:text-white"
+                  }`}
+                >
+                  <Globe2 className="h-3 w-3" /> Public
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPublic(false)}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+                    !isPublic ? "bg-white text-black" : "text-white/55 hover:text-white"
+                  }`}
+                >
+                  <Lock className="h-3 w-3" /> Private
+                </button>
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setEditOpen(false)}>

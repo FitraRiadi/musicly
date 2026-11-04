@@ -61,12 +61,15 @@ export interface Playlist {
   cover: string;
   is_public?: boolean;
   is_collaborative?: boolean;
-  owner: { id: number; name: string; avatar: string | null };
+  owner: { id: number; name: string; username?: string; avatar: string | null };
   nb_tracks: number;
   duration?: number;
   tracks?: PlaylistTrackEntry[];
   created_at?: string;
   updated_at?: string;
+  saves_count?: number;
+  saved?: boolean;
+  is_owner?: boolean;
 }
 
 export interface HomeSection {
@@ -90,7 +93,8 @@ export interface SearchResults {
   albums?: Album[];
   artists?: Artist[];
   playlists?: Playlist[];
-  items?: Track[] | Album[] | Artist[] | Playlist[];
+  users?: PublicUser[];
+  items?: Track[] | Album[] | Artist[] | Playlist[] | PublicUser[];
   total?: number;
   next?: string | null;
 }
@@ -101,6 +105,7 @@ export interface SearchSuggestions {
   albums: Album[];
   artists: Artist[];
   playlists: Playlist[];
+  users?: PublicUser[];
 }
 
 export interface User {
@@ -113,6 +118,71 @@ export interface User {
   avatar: string | null;
   is_staff: boolean;
   created_at: string;
+}
+
+export type FriendshipStatus =
+  | "none"
+  | "self"
+  | "friends"
+  | "pending_outgoing"
+  | "pending_incoming";
+
+export interface FriendshipState {
+  status: FriendshipStatus;
+  request_id: number | null;
+}
+
+export interface PublicUser {
+  id: number;
+  username: string;
+  name: string;
+  display_name: string;
+  bio: string;
+  avatar: string | null;
+  created_at: string;
+  friends_count: number;
+  friendship: FriendshipState;
+}
+
+export interface FriendRequest {
+  id: number;
+  status: "pending" | "accepted";
+  direction: "incoming" | "outgoing";
+  created_at: string;
+  user: PublicUser;
+}
+
+export interface FriendList {
+  friends: PublicUser[];
+  incoming: FriendRequest[];
+  outgoing: FriendRequest[];
+}
+
+export interface Badge {
+  slug: string;
+  title: string;
+  description: string;
+  image_url: string;
+  metric: string;
+  threshold: number;
+  value: number;
+  progress: number;
+  earned: boolean;
+  earned_at: string | null;
+}
+
+export interface PublicProfile {
+  user: PublicUser;
+  stats: {
+    friends: number;
+    public_playlists: number;
+    badges: number;
+    plays: number;
+  };
+  playlists: Playlist[];
+  badges: Badge[];
+  friendship: FriendshipState;
+  is_self: boolean;
 }
 
 export interface HistoryItem {
@@ -138,6 +208,7 @@ export interface FollowedArtist {
 
 export interface LibraryPayload {
   playlists: Playlist[];
+  saved_playlists?: Playlist[];
   liked: { count: number; items: LikeItem[] };
   artists: FollowedArtist[];
 }

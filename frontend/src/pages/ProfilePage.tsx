@@ -3,21 +3,29 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   Camera,
+  Check,
   Download,
   Heart,
   ListMusic,
   LogOut,
   Music2,
   Save,
+  Search,
+  Trophy,
   UserCheck,
+  UserPlus,
+  Users,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { User } from "@/lib/types";
+import type { Badge as BadgeModel, FriendList, User } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { UserCard } from "@/components/social/UserCard";
+import { BadgeTile } from "@/components/social/BadgeTile";
 import { useAuthStore } from "@/store/auth";
 import { useLibraryStore } from "@/store/library";
 import { useUiStore } from "@/store/ui";
@@ -41,6 +49,20 @@ export function ProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [friendsData, setFriendsData] = useState<FriendList | null>(null);
+  const [badges, setBadges] = useState<BadgeModel[]>([]);
+  const [collecting, setCollecting] = useState<string | null>(null);
+  const [socialLoading, setSocialLoading] = useState(true);
+
+  const loadSocial = () => {
+    setSocialLoading(true);
+    Promise.allSettled([api.friends(), api.badges()])
+      .then(([friendsResult, badgesResult]) => {
+        if (friendsResult.status === "fulfilled") setFriendsData(friendsResult.value);
+        if (badgesResult.status === "fulfilled") setBadges(badgesResult.value.items);
+      })
+      .finally(() => setSocialLoading(false));
+  };
 
   useEffect(() => {
     api
@@ -53,6 +75,7 @@ export function ProfilePage() {
         setUser(data.user);
       })
       .catch(() => toast("Could not load your profile.", "error"));
+    loadSocial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -94,6 +117,50 @@ export function ProfilePage() {
     navigate("/");
   };
 
+  const collectBadge = async (badge: BadgeModel) => {
+    setCollecting(badge.slug);
+    try {
+      const updated = await api.collectBadge(badge.slug);
+      setBadges((current) => current.map((item) => (item.slug === updated.slug ? updated : item)));
+      setStats((current) => ({ ...current, badges: (current.badges ?? 0) + (badge.earned ? 0 : 1) }));
+      toast(`${updated.title} collected`, "success");
+    } catch (error: any) {
+      toast(error?.message || "Keep listening to unlock this badge.", "error");
+    } finally {
+      setCollecting(null);
+    }
+  };
+
+  const acceptRequest = async (requestId: number) => {
+    try {
+      await api.acceptFriendRequest(requestId);
+      loadSocial();
+      toast("Friend request accepted", "success");
+    } catch (error: any) {
+      toast(error?.message || "Could not accept the request.", "error");
+    }
+  };
+
+  const declineRequest = async (requestId: number) => {
+    try {
+      await api.declineFriendRequest(requestId);
+      loadSocial();
+      toast("Friend request declined", "success");
+    } catch (error: any) {
+      toast(error?.message || "Could not decline the request.", "error");
+    }
+  };
+
+  const removeFriend = async (userId: number) => {
+    try {
+      await api.removeFriend(userId);
+      loadSocial();
+      toast("Removed from friends", "success");
+    } catch (error: any) {
+      toast(error?.message || "Could not remove this friend.", "error");
+    }
+  };
+
   const user = profile || currentUser;
 
   return (
@@ -127,7 +194,12 @@ export function ProfilePage() {
             {user?.is_staff && <Badge variant="success">Staff</Badge>}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" className="gap-2">
+            <Link to={`/user/${user?.username || ""}`}>
+              <Users className="h-4 w-4" /> Public profile
+            </Link>
+          </Button>
           <Button variant="outline" onClick={() => navigate("/dashboard")} className="gap-2">
             <BarChart3 className="h-4 w-4" /> Dashboard
           </Button>
@@ -137,9 +209,11 @@ export function ProfilePage() {
         </div>
       </div>
 
-      <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
           { label: "Playlists", value: stats.playlists ?? 0, icon: ListMusic },
+          { label: "Friends", value: stats.friends ?? 0, icon: Users },
+          { label: "Badges", value: stats.badges ?? 0, icon: Trophy },
           { label: "Liked songs", value: stats.liked ?? 0, icon: Heart },
           { label: "Following", value: stats.following ?? 0, icon: UserCheck },
           { label: "Total plays", value: stats.played ?? 0, icon: Music2 },
@@ -157,6 +231,121 @@ export function ProfilePage() {
           </Card>
         ))}
       </div>
+
+      <section className="mt-8">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-bold">
+              Badge collection <Badge variant="secondary">{badges.filter((badge) => badge.earned).length}</Badge>
+            </h2>
+            <p className="mt-1 text-xs text-white/40">
+              Badges are shown on your public profile. Keep listening, saving and connecting to unlock them.
+            </p>
+          </div>
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
+            <Link to="/search?type=user">
+              <Search className="h-3.5 w-3.5" /> Find people
+            </Link>
+          </Button>
+        </div>
+        {socialLoading && badges.length === 0 ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-32 animate-pulse rounded-xl bg-white/[0.04]" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {badges.map((badge) => (
+              <BadgeTile
+                key={badge.slug}
+                badge={badge}
+                collecting={collecting === badge.slug}
+                onCollect={collectBadge}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-8">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            Friends <Badge variant="secondary">{friendsData?.friends.length ?? stats.friends ?? 0}</Badge>
+          </h2>
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link to="/search?type=user">
+              <UserPlus className="h-3.5 w-3.5" /> Add friends
+            </Link>
+          </Button>
+        </div>
+
+        {friendsData?.incoming.length ? (
+          <div className="mb-4 space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35">Requests</p>
+            {friendsData.incoming.map((request) => (
+              <div
+                key={request.id}
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/20 bg-primary/[0.06] p-3"
+              >
+                <UserCard user={request.user} compact className="min-w-0 flex-1 border-0 bg-transparent p-0 hover:bg-transparent" />
+                <div className="flex gap-2">
+                  <Button size="sm" className="h-8 gap-1 px-3 text-xs" onClick={() => void acceptRequest(request.id)}>
+                    <Check className="h-3.5 w-3.5" /> Accept
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 gap-1 px-3 text-xs"
+                    onClick={() => void declineRequest(request.id)}
+                  >
+                    <X className="h-3.5 w-3.5" /> Decline
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {friendsData?.outgoing.length ? (
+          <div className="mb-4 flex flex-wrap gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-white/35">Sent requests</span>
+            {friendsData.outgoing.map((request) => (
+              <span
+                key={request.id}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] px-2.5 py-1 text-[11px] text-white/60"
+              >
+                @{request.user.username} · pending
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {friendsData?.friends.length ? (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {friendsData.friends.map((friend) => (
+              <div key={friend.id} className="group relative">
+                <UserCard user={friend} compact />
+                <button
+                  className="absolute right-2 top-2 rounded-full bg-black/40 px-2 py-0.5 text-[9px] text-white/45 opacity-0 transition hover:text-red-300 group-hover:opacity-100"
+                  onClick={() => void removeFriend(friend.id)}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] py-10 text-center">
+            <Users className="h-8 w-8 text-white/30" />
+            <p className="text-sm font-medium text-white/70">No friends yet</p>
+            <p className="text-xs text-white/40">Find listeners with similar taste and send a friend request.</p>
+            <Button asChild variant="secondary" size="sm" className="mt-2">
+              <Link to="/search?type=user">Find people</Link>
+            </Button>
+          </div>
+        )}
+      </section>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card className="border-white/[0.07] bg-white/[0.03]">

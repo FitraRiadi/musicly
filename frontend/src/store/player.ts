@@ -42,13 +42,16 @@ interface PlayerState {
   setBuffering: (buffering: boolean) => void;
 }
 
-export const audio = typeof Audio !== "undefined" ? new Audio() : (null as unknown as HTMLAudioElement);
-if (audio) {
-  audio.preload = "metadata";
-}
+const hasAudio = typeof Audio !== "undefined";
+let audio = hasAudio ? new Audio() : (null as unknown as HTMLAudioElement);
+let standby = hasAudio ? new Audio() : (null as unknown as HTMLAudioElement);
+if (audio) audio.preload = "auto";
+if (standby) standby.preload = "auto";
 
 const storedVolume = Number(localStorage.getItem("musicly_volume") ?? "0.85");
 const initialVolume = Number.isFinite(storedVolume) ? Math.min(1, Math.max(0, storedVolume)) : 0.85;
+if (audio) audio.volume = initialVolume;
+if (standby) standby.volume = initialVolume;
 
 function reportHistory(track: Track, context: string) {
   if (!getAccessToken()) return;
@@ -72,24 +75,161 @@ function syncMediaSession(track: Track) {
 
 let startRequest = 0;
 let currentOfflineUrl: string | null = null;
+let prefetchToken = 0;
+let prefetchedTrackId = "";
+let prefetchedSource = "";
+
+function bindAudioElement(element: HTMLAudioElement) {
+  element.preload = "auto";
+  element.addEventListener("play", () => {
+    if (element === audio) usePlayerStore.setState({ isPlaying: true });
+  });
+  element.addEventListener("pause", () => {
+    if (element === audio) usePlayerStore.setState({ isPlaying: false });
+  });
+  element.addEventListener("waiting", () => {
+    if (element === audio) usePlayerStore.setState({ buffering: true });
+  });
+  element.addEventListener("playing", () => {
+    if (element === audio) usePlayerStore.setState({ buffering: false });
+  });
+  element.addEventListener("canplay", () => {
+    if (element === audio) usePlayerStore.setState({ buffering: false });
+  });
+  element.addEventListener("timeupdate", () => {
+    if (element !== audio) return;
+    usePlayerStore.setState({
+      progress: element.currentTime,
+      duration:
+        Number.isFinite(element.duration) && element.duration > 0
+          ? element.duration
+          : usePlayerStore.getState().duration,
+    });
+  });
+  element.addEventListener("ended", () => {
+    if (element === audio) usePlayerStore.getState().next(true);
+  });
+  element.addEventListener("error", () => {
+    if (element === audio) usePlayerStore.setState({ isPlaying: false, buffering: false });
+  });
+}
+
+if (audio) bindAudioElement(audio);
+if (standby && standby !== audio) bindAudioElement(standby);
 
 export const usePlayerStore = create<PlayerState>((set, get) => {
+  const resetStandby = () => {
+    prefetchToken += 1;
+    prefetchedTrackId = "";
+    prefetchedSource = "";
+    if (!standby || standby === audio) return;
+    standby.pause();
+    standby.removeAttribute("src");
+    standby.load();
+  };
+
+  const sourceFor = (track: Track) => {
+    if (track.has_full_audio && track.stream_url) return apiUrl(track.stream_url);
+    return track.preview ? apiUrl(track.preview) : "";
+  };
+
+  /**
+   * Load the next queued track into a second audio element while the current
+   * song plays. When the queue advances we swap the elements, so playback
+   * starts from the already-buffered element instead of waiting for a new
+   * network request (and, for YouTube-backed tracks, a fresh resolver call).
+   */
+  const prefetchNext = () => {
+    if (!audio || !standby || standby === audio) return;
+    const { queue, index, repeat } = get();
+    const current = queue[index];
+    if (!current) {
+      resetStandby();
+      return;
+    }
+
+    let nextIndex = index + 1;
+    if (nextIndex >= queue.length) {
+      if (repeat === "all" && queue.length > 1) nextIndex = 0;
+      else {
+        resetStandby();
+        return;
+      }
+    }
+
+    const next = queue[nextIndex];
+    if (!next || next.id === current.id || next.source === "imported") {
+      resetStandby();
+      return;
+    }
+    const source = sourceFor(next);
+    if (!source) {
+      resetStandby();
+      return;
+    }
+    if (prefetchedTrackId === next.id && prefetchedSource === source) return;
+
+    resetStandby();
+    const token = prefetchToken;
+    getOfflineAudio(next.id)
+      .then((blob) => {
+        if (token !== prefetchToken || !standby) return;
+        // Offline tracks already start from IndexedDB; preloading them over
+        // the network would waste bandwidth.
+        if (blob) return;
+        standby.src = source;
+        standby.preload = "auto";
+        standby.load();
+        prefetchedTrackId = next.id;
+        prefetchedSource = source;
+      })
+      .catch(() => undefined);
+  };
+
   const startTrack = (track: Track, autoplay = true) => {
     if (!audio) return;
     const requestId = ++startRequest;
-    const remoteSource =
-      track.has_full_audio && track.stream_url ? apiUrl(track.stream_url) : apiUrl(track.preview);
+    const remoteSource = sourceFor(track);
 
     const activateSource = (source: string, objectUrl: string | null) => {
       if (requestId !== startRequest) {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
         return;
       }
-      const previousOfflineUrl = currentOfflineUrl;
+
+      const usePrefetched =
+        !objectUrl &&
+        Boolean(remoteSource) &&
+        prefetchedTrackId === track.id &&
+        prefetchedSource === remoteSource &&
+        Boolean(standby);
+
+      if (usePrefetched) {
+        const previous = audio;
+        audio = standby;
+        standby = previous;
+        prefetchedTrackId = "";
+        prefetchedSource = "";
+        prefetchToken += 1;
+        if (currentOfflineUrl) {
+          URL.revokeObjectURL(currentOfflineUrl);
+          currentOfflineUrl = null;
+        }
+        previous.pause();
+        previous.removeAttribute("src");
+        previous.load();
+      } else {
+        resetStandby();
+        if (currentOfflineUrl) {
+          URL.revokeObjectURL(currentOfflineUrl);
+          currentOfflineUrl = null;
+        }
+        audio.src = source;
+      }
+
       currentOfflineUrl = objectUrl;
-      audio.src = source;
+      audio.volume = get().muted ? 0 : get().volume;
       audio.currentTime = 0;
-      if (previousOfflineUrl && previousOfflineUrl !== objectUrl) URL.revokeObjectURL(previousOfflineUrl);
       set({ duration: track.duration || 30, progress: 0, buffering: true });
       if (autoplay) {
         audio
@@ -99,6 +239,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       } else {
         set({ isPlaying: false, buffering: false });
       }
+      prefetchNext();
     };
 
     syncMediaSession(track);
@@ -156,9 +297,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         index = 0;
       }
 
-      if (audio) {
-        audio.volume = get().muted ? 0 : get().volume;
-      }
       set({ queue, index, context, isPlaying: true });
       startTrack(queue[index]);
     },
@@ -214,6 +352,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       audio.pause();
       audio.currentTime = 0;
       set({ isPlaying: false, progress: 0, index: 0 });
+      resetStandby();
     },
 
     prev: () => {
@@ -261,20 +400,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       } else {
         set({ shuffle: false });
       }
+      prefetchNext();
     },
 
     cycleRepeat: () => {
       const order: RepeatMode[] = ["off", "all", "one"];
       const nextMode = order[(order.indexOf(get().repeat) + 1) % order.length];
       set({ repeat: nextMode });
+      prefetchNext();
     },
 
-    addToQueue: (track) => set({ queue: [...get().queue, track] }),
+    addToQueue: (track) => {
+      set({ queue: [...get().queue, track] });
+      prefetchNext();
+    },
 
     playNext: (track) => {
       const queue = [...get().queue];
       queue.splice(get().index + 1, 0, track);
       set({ queue });
+      prefetchNext();
     },
 
     jumpTo: (targetIndex) => {
@@ -300,6 +445,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       else if (fromIndex > index && toIndex <= index) nextIndex = index + 1;
 
       set({ queue: next, index: nextIndex });
+      prefetchNext();
     },
 
     removeFromQueue: (removeIndex) => {
@@ -307,17 +453,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       if (removeIndex === index) return;
       const next = queue.filter((_, i) => i !== removeIndex);
       set({ queue: next, index: removeIndex < index ? index - 1 : index });
+      prefetchNext();
     },
 
     clearQueue: () => {
       startRequest += 1;
-      audio?.pause();
-      if (audio && currentOfflineUrl) {
-        const offlineUrl = currentOfflineUrl;
-        currentOfflineUrl = null;
+      prefetchToken += 1;
+      prefetchedTrackId = "";
+      prefetchedSource = "";
+      if (audio) {
+        audio.pause();
         audio.removeAttribute("src");
         audio.load();
-        URL.revokeObjectURL(offlineUrl);
+      }
+      if (standby && standby !== audio) {
+        standby.pause();
+        standby.removeAttribute("src");
+        standby.load();
+      }
+      if (currentOfflineUrl) {
+        URL.revokeObjectURL(currentOfflineUrl);
+        currentOfflineUrl = null;
       }
       set({ queue: [], index: -1, isPlaying: false, progress: 0, duration: 0, context: "", lyricsOpen: false });
     },
@@ -335,29 +491,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   };
 });
 
-if (audio) {
-  audio.volume = initialVolume;
-  audio.addEventListener("play", () => usePlayerStore.setState({ isPlaying: true }));
-  audio.addEventListener("pause", () => usePlayerStore.setState({ isPlaying: false }));
-  audio.addEventListener("waiting", () => usePlayerStore.setState({ buffering: true }));
-  audio.addEventListener("playing", () => usePlayerStore.setState({ buffering: false }));
-  audio.addEventListener("canplay", () => usePlayerStore.setState({ buffering: false }));
-  audio.addEventListener("timeupdate", () => {
-    usePlayerStore.setState({
-      progress: audio.currentTime,
-      duration: Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : usePlayerStore.getState().duration,
-    });
+if ("mediaSession" in navigator) {
+  navigator.mediaSession.setActionHandler("play", () => usePlayerStore.getState().togglePlay());
+  navigator.mediaSession.setActionHandler("pause", () => usePlayerStore.getState().togglePlay());
+  navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().next());
+  navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prev());
+  navigator.mediaSession.setActionHandler("seekto", (details) => {
+    if (typeof details.seekTime === "number") usePlayerStore.getState().seek(details.seekTime);
   });
-  audio.addEventListener("ended", () => usePlayerStore.getState().next(true));
-  audio.addEventListener("error", () => usePlayerStore.setState({ isPlaying: false, buffering: false }));
-
-  if ("mediaSession" in navigator) {
-    navigator.mediaSession.setActionHandler("play", () => usePlayerStore.getState().togglePlay());
-    navigator.mediaSession.setActionHandler("pause", () => usePlayerStore.getState().togglePlay());
-    navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().next());
-    navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prev());
-    navigator.mediaSession.setActionHandler("seekto", (details) => {
-      if (typeof details.seekTime === "number") usePlayerStore.getState().seek(details.seekTime);
-    });
-  }
 }

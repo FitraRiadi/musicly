@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, Download, LayoutGrid, ListMusic, Plus, Search, UserCheck } from "lucide-react";
+import { Bookmark, Heart, Download, LayoutGrid, ListMusic, Plus, Search, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,10 +11,10 @@ import { useDownloadsStore } from "@/store/downloads";
 import { useUiStore } from "@/store/ui";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "playlists" | "artists";
+type Filter = "all" | "playlists" | "saved" | "artists";
 
 export function LibraryPage() {
-  const { playlists, followed, liked, loaded, load } = useLibraryStore();
+  const { playlists, savedPlaylists, followed, liked, loaded, load } = useLibraryStore();
   const downloadCount = useDownloadsStore((state) => state.items.length);
   const openCreate = useUiStore((state) => state.openCreatePlaylist);
   const [filter, setFilter] = useState<Filter>("all");
@@ -32,7 +32,7 @@ export function LibraryPage() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">Your Library</h1>
           <p className="mt-1 text-sm text-white/50">
-            {playlists.length} playlists · {artists.length} artists · {likedTracks.length} liked songs · {downloadCount} downloads
+            {playlists.length} playlists · {savedPlaylists.length} saved · {artists.length} artists · {likedTracks.length} liked songs · {downloadCount} downloads
           </p>
         </div>
         <Button onClick={() => openCreate()} className="gap-2">
@@ -45,6 +45,7 @@ export function LibraryPage() {
           [
             { id: "all", label: "All", icon: LayoutGrid },
             { id: "playlists", label: "Playlists", icon: ListMusic },
+            { id: "saved", label: "Saved", icon: Bookmark },
             { id: "artists", label: "Artists", icon: UserCheck },
           ] as const
         ).map((item) => (
@@ -70,7 +71,7 @@ export function LibraryPage() {
           </div>
         )}
 
-        {filter !== "artists" && (
+        {filter !== "artists" && filter !== "saved" && (
           <section>
             <h2 className="mb-3 text-lg font-bold">Playlists</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -131,7 +132,43 @@ export function LibraryPage() {
           </section>
         )}
 
-        {filter !== "playlists" && (
+        {(filter === "all" || filter === "saved") && (
+          <section>
+            <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">
+              Saved playlists <Badge variant="secondary">{savedPlaylists.length}</Badge>
+            </h2>
+            {savedPlaylists.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] py-10 text-center">
+                <Bookmark className="h-8 w-8 text-white/30" />
+                <p className="text-sm font-medium text-white/70">No saved playlists yet</p>
+                <p className="text-xs text-white/40">Save a public playlist from another listener to keep it here.</p>
+                <Button asChild variant="secondary" size="sm" className="mt-2">
+                  <Link to="/search">Discover playlists</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {savedPlaylists.map((playlist) => (
+                  <Link
+                    key={playlist.id}
+                    to={`/playlist/${playlist.id}`}
+                    className="group flex flex-col gap-3 rounded-xl bg-white/[0.035] p-3 transition hover:bg-white/[0.09]"
+                  >
+                    <PlaylistCover playlist={playlist} className="w-full rounded-lg" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{playlist.name}</p>
+                      <p className="truncate text-xs text-white/55">
+                        By {playlist.owner?.name || playlist.owner?.username || "Musicly"} · {playlist.nb_tracks ?? playlist.tracks?.length ?? 0} songs
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {filter !== "playlists" && filter !== "saved" && (
           <section>
             <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">
               Artists <Badge variant="secondary">{artists.length}</Badge>
@@ -159,7 +196,7 @@ export function LibraryPage() {
           </section>
         )}
 
-        {filter !== "artists" && likedTracks.length > 0 && (
+        {filter !== "artists" && filter !== "saved" && likedTracks.length > 0 && (
           <section>
             <h2 className="mb-3 text-lg font-bold">Recently liked</h2>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -170,7 +207,7 @@ export function LibraryPage() {
           </section>
         )}
 
-        {filter !== "artists" && playlists.length === 0 && likedTracks.length === 0 && downloadCount === 0 && loaded && (
+        {filter !== "artists" && filter !== "saved" && playlists.length === 0 && likedTracks.length === 0 && downloadCount === 0 && loaded && (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] py-14 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/5">
               <Search className="h-6 w-6 text-white/40" />

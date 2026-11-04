@@ -17,8 +17,10 @@ urlpatterns = [
     path("genres/", views.GenreListView.as_view(), name="genres"),
     path("genres/<str:genre_id>/", views.GenreDetailView.as_view(), name="genre-detail"),
     path("playlists/", views.PlaylistListCreateView.as_view(), name="playlists"),
+    path("playlists/public/", views.PublicPlaylistListView.as_view(), name="public-playlists"),
     path("playlists/dz-<int:playlist_id>/", views.DeezerPlaylistView.as_view(), name="deezer-playlist"),
     path("playlists/<int:playlist_id>/", views.PlaylistDetailView.as_view(), name="playlist-detail"),
+    path("playlists/<int:playlist_id>/save/", views.PlaylistSaveView.as_view(), name="playlist-save"),
     path("playlists/<int:playlist_id>/tracks/", views.PlaylistTracksView.as_view(), name="playlist-tracks"),
     path(
         "playlists/<int:playlist_id>/tracks/<str:track_id>/",

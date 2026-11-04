@@ -13,6 +13,7 @@ from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractHour, TruncDate
 from django.http import FileResponse, Http404, HttpResponseRedirect, StreamingHttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.http import content_disposition_header
 from rest_framework import status
@@ -21,8 +22,8 @@ from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import User
-from accounts.serializers import UserSerializer
+from accounts.models import Friendship, User
+from accounts.serializers import UserSerializer, serialize_public_user
 
 from . import deezer, lyrics, streaming
 from .curation import SPOTLIGHT_ARTISTS, SPOTLIGHT_SUBTITLE, SPOTLIGHT_TITLE
@@ -33,6 +34,7 @@ from .models import (
     Playlist,
     PlaylistTrack,
     RecentSearch,
+    SavedPlaylist,
     Track,
 )
 from .serializers import (
@@ -104,6 +106,183 @@ def spotlight_section():
     }
 
 
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "public"}
+
+
+def _friend_ids(user) -> list[int]:
+    rows = Friendship.objects.filter(status=Friendship.Status.ACCEPTED).filter(
+        Q(requester=user) | Q(addressee=user)
+    )
+    return [
+        row.addressee_id if row.requester_id == user.id else row.requester_id
+        for row in rows
+    ]
+
+
+def _taste_scores(user):
+    """Blend explicit likes, listening history, follows and saved playlists."""
+    scores: dict[str, float] = {}
+    names: dict[str, str] = {}
+
+    def add(artist_id, artist_name, weight):
+        key = str(artist_id).strip() if artist_id else ""
+        if not key and artist_name:
+            key = artist_name.strip()
+        if not key:
+            return
+        scores[key] = scores.get(key, 0.0) + weight
+        if artist_name:
+            names[key] = artist_name
+
+    for row in (
+        PlayHistory.objects.filter(user=user)
+        .values("track__artist_id", "track__artist_name")
+        .annotate(plays=Count("id"))
+        .order_by("-plays")[:40]
+    ):
+        add(row["track__artist_id"], row["track__artist_name"], min(row["plays"], 8))
+
+    for row in LikedTrack.objects.filter(user=user).select_related("track")[:80]:
+        add(row.track.artist_id, row.track.artist_name, 4)
+
+    for follow in FollowedArtist.objects.filter(user=user)[:40]:
+        add(follow.artist_id, follow.name, 3)
+
+    saved_ids = list(
+        SavedPlaylist.objects.filter(user=user).values_list("playlist_id", flat=True)
+    )
+    if saved_ids:
+        for entry in PlaylistTrack.objects.filter(playlist_id__in=saved_ids).select_related("track"):
+            add(entry.track.artist_id, entry.track.artist_name, 2)
+
+    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    return [(key, names.get(key, key), value) for key, value in ranked]
+
+
+def _personal_sections(user, request=None) -> list[dict]:
+    sections: list[dict] = []
+    played_ids = set(
+        PlayHistory.objects.filter(user=user).values_list("track__deezer_id", flat=True)
+    )
+    liked_ids = set(
+        LikedTrack.objects.filter(user=user).values_list("track__deezer_id", flat=True)
+    )
+    heard = played_ids | liked_ids
+
+    taste = _taste_scores(user)
+    for artist_key, artist_name, _score in taste[:1]:
+        if not artist_key.isdigit():
+            continue
+        try:
+            artist = deezer.get_artist(artist_key)
+        except deezer.DeezerError:
+            break
+        items = []
+        for track in artist.get("top_tracks", []):
+            try:
+                if int(track.get("deezer_id") or track.get("id")) in heard:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            items.append(track)
+            if len(items) >= 10:
+                break
+        if items:
+            sections.append(
+                {
+                    "id": "taste-artist",
+                    "title": f"Because you like {artist_name}",
+                    "subtitle": "Picked from your listening, likes and saves",
+                    "kind": "tracks",
+                    "items": attach_local_audio(items, user),
+                }
+            )
+        break
+
+    friend_ids = _friend_ids(user)
+    if friend_ids:
+        recent_cutoff = timezone.now() - timedelta(days=45)
+        ranked = (
+            PlayHistory.objects.filter(user_id__in=friend_ids, played_at__gte=recent_cutoff)
+            .exclude(track__deezer_id__in=heard)
+            .values("track_id")
+            .annotate(plays=Count("id"))
+            .order_by("-plays")[:20]
+        )
+        order = {row["track_id"]: index for index, row in enumerate(ranked)}
+        rows = Track.objects.filter(id__in=order).select_related()
+        rows = sorted(rows, key=lambda row: order.get(row.id, 999))
+        if rows:
+            sections.append(
+                {
+                    "id": "friend-picks",
+                    "title": "From your friends",
+                    "subtitle": "What people in your circle are playing",
+                    "kind": "tracks",
+                    "items": [serialize_track(row, user) for row in rows[:10]],
+                }
+            )
+
+        friend_playlists = (
+            Playlist.objects.filter(owner_id__in=friend_ids, is_public=True)
+            .annotate(
+                nb_tracks=Count("entries", distinct=True),
+                saves_count=Count("saves", distinct=True),
+            )
+            .select_related("owner")
+            .prefetch_related("entries__track")[:8]
+        )
+        if friend_playlists:
+            sections.append(
+                {
+                    "id": "friend-playlists",
+                    "title": "Playlists from your friends",
+                    "kind": "playlists",
+                    "items": PlaylistSerializer(
+                        friend_playlists, many=True, context={"request": request}
+                    ).data,
+                }
+            )
+
+    saved_ids = list(
+        SavedPlaylist.objects.filter(user=user).values_list("playlist_id", flat=True)
+    )
+    if saved_ids:
+        ranked = (
+            PlaylistTrack.objects.filter(
+                playlist_id__in=saved_ids, playlist__is_public=True
+            )
+            .exclude(track__deezer_id__in=heard)
+            .values("track_id")
+            .annotate(picks=Count("playlist_id", distinct=True))
+            .order_by("-picks")[:20]
+        )
+        order = {row["track_id"]: index for index, row in enumerate(ranked)}
+        rows = sorted(
+            Track.objects.filter(id__in=order),
+            key=lambda row: order.get(row.id, 999),
+        )
+        if rows:
+            sections.append(
+                {
+                    "id": "saved-picks",
+                    "title": "From playlists you saved",
+                    "subtitle": "More like the collections you keep",
+                    "kind": "tracks",
+                    "items": [serialize_track(row, user) for row in rows[:10]],
+                }
+            )
+
+    return sections
+
+
 class HomeView(APIView):
     permission_classes = [AllowAny]
 
@@ -128,6 +307,10 @@ class HomeView(APIView):
                     "kind": "tracks",
                     "items": [serialize_track(row.track, user) for row in liked],
                 })
+            try:
+                sections.extend(_personal_sections(user, request))
+            except Exception:
+                logger.exception("Could not build personalised home sections")
 
         try:
             chart = deezer.charts()
@@ -208,7 +391,7 @@ class SearchView(APIView):
     def get(self, request):
         query = (request.query_params.get("q") or "").strip()
         kind = request.query_params.get("type", "all")
-        if kind not in {"all", "track", "album", "artist", "playlist"}:
+        if kind not in {"all", "track", "album", "artist", "playlist", "user"}:
             kind = "all"
         try:
             limit = min(int(request.query_params.get("limit", 20)), 50)
@@ -216,10 +399,60 @@ class SearchView(APIView):
         except ValueError:
             limit, index = 20, 0
         if not query:
-            return ok({"query": "", "tracks": [], "albums": [], "artists": [], "playlists": []})
+            return ok(
+                {
+                    "query": "",
+                    "tracks": [],
+                    "albums": [],
+                    "artists": [],
+                    "playlists": [],
+                    "users": [],
+                }
+            )
+        current = request.user if request.user.is_authenticated else None
+        users_qs = (
+            User.objects.filter(
+                Q(username__icontains=query)
+                | Q(display_name__icontains=query)
+                | Q(bio__icontains=query)
+            )
+            .order_by("username")
+        )
+        users = [
+            serialize_public_user(user, request, current)
+            for user in users_qs[index : index + (limit if kind == "user" else min(6, limit))]
+        ]
+
+        if kind == "user":
+            return ok(
+                {
+                    "query": query,
+                    "kind": "user",
+                    "items": users,
+                    "users": users,
+                    "total": users_qs.count(),
+                    "next": None,
+                }
+            )
+
         try:
             result = deezer.search(query, kind=kind, limit=limit, index=index)
         except deezer.DeezerError as exc:
+            if kind == "all" and users:
+                return ok(
+                    {
+                        "query": query,
+                        "kind": "all",
+                        "tracks": [],
+                        "albums": [],
+                        "artists": [],
+                        "playlists": [],
+                        "users": users,
+                        "total": len(users),
+                        "next": None,
+                        "degraded": str(exc),
+                    }
+                )
             return catalog_error(exc)
         if request.user.is_authenticated:
             RecentSearch.objects.filter(user=request.user, query__iexact=query).delete()
@@ -236,6 +469,8 @@ class SearchView(APIView):
                 result.get("items", []),
                 request.user if request.user.is_authenticated else None,
             )
+        if isinstance(result, dict):
+            result["users"] = users
         return ok(result)
 
 
@@ -251,14 +486,34 @@ class SearchSuggestView(APIView):
     def get(self, request):
         query = (request.query_params.get("q") or "").strip()
         if len(query) < 2:
-            return ok({"query": query, "tracks": [], "albums": [], "artists": [], "playlists": []})
+            return ok({"query": query, "tracks": [], "albums": [], "artists": [], "playlists": [], "users": []})
         try:
             limit = max(3, min(int(request.query_params.get("limit", 6)), 10))
         except ValueError:
             limit = 6
+        current = request.user if request.user.is_authenticated else None
+        user_rows = (
+            User.objects.filter(
+                Q(username__icontains=query) | Q(display_name__icontains=query)
+            )
+            .order_by("username")[:3]
+        )
+        users = [serialize_public_user(user, request, current) for user in user_rows]
         try:
             result = deezer.search(query, kind="all", limit=limit)
         except deezer.DeezerError as exc:
+            if users:
+                return ok(
+                    {
+                        "query": query,
+                        "tracks": [],
+                        "albums": [],
+                        "artists": [],
+                        "playlists": [],
+                        "users": users,
+                        "degraded": str(exc),
+                    }
+                )
             return catalog_error(exc)
         tracks = result.get("tracks", [])[: min(limit, 4)]
         attach_local_audio(tracks, request.user if request.user.is_authenticated else None)
@@ -269,6 +524,7 @@ class SearchSuggestView(APIView):
                 "artists": result.get("artists", [])[:3],
                 "albums": result.get("albums", [])[:2],
                 "playlists": result.get("playlists", [])[:2],
+                "users": users,
             }
         )
 
@@ -642,7 +898,10 @@ class PlaylistListCreateView(APIView):
     def get(self, request):
         playlists = (
             Playlist.objects.filter(owner=request.user)
-            .annotate(nb_tracks=Count("entries"))
+            .annotate(
+                nb_tracks=Count("entries", distinct=True),
+                saves_count=Count("saves", distinct=True),
+            )
             .prefetch_related("entries__track")
         )
         return ok({"items": PlaylistSerializer(playlists, many=True, context={"request": request}).data})
@@ -653,8 +912,8 @@ class PlaylistListCreateView(APIView):
             owner=request.user,
             name=name[:140],
             description=(request.data.get("description") or "")[:400],
-            is_public=bool(request.data.get("is_public", True)),
-            is_collaborative=bool(request.data.get("is_collaborative", False)),
+            is_public=_as_bool(request.data.get("is_public", True), True),
+            is_collaborative=_as_bool(request.data.get("is_collaborative", False), False),
         )
         cover = request.FILES.get("cover")
         if cover:
@@ -677,13 +936,16 @@ class PlaylistListCreateView(APIView):
 
 
 class PlaylistDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get_playlist(self, request, playlist_id):
         playlist = Playlist.objects.filter(pk=playlist_id).first()
         if not playlist:
             return None, Response({"detail": "Playlist not found."}, status=status.HTTP_404_NOT_FOUND)
-        if not playlist.is_public and playlist.owner_id != request.user.id:
+        is_owner = bool(
+            request.user.is_authenticated and playlist.owner_id == request.user.id
+        )
+        if not playlist.is_public and not is_owner:
             return None, Response({"detail": "This playlist is private."}, status=status.HTTP_403_FORBIDDEN)
         return playlist, None
 
@@ -697,7 +959,7 @@ class PlaylistDetailView(APIView):
         playlist, error = self.get_playlist(request, playlist_id)
         if error:
             return error
-        if playlist.owner_id != request.user.id:
+        if not request.user.is_authenticated or playlist.owner_id != request.user.id:
             return Response({"detail": "Only the owner can edit this playlist."}, status=status.HTTP_403_FORBIDDEN)
         for field in ("name", "description", "is_public", "is_collaborative"):
             if field in request.data:
@@ -706,6 +968,8 @@ class PlaylistDetailView(APIView):
                     value = (value or "").strip()[:140] or playlist.name
                 if field == "description":
                     value = (value or "")[:400]
+                if field in {"is_public", "is_collaborative"}:
+                    value = _as_bool(value, getattr(playlist, field))
                 setattr(playlist, field, value)
         if "cover" in request.FILES:
             playlist.cover = request.FILES["cover"]
@@ -716,10 +980,75 @@ class PlaylistDetailView(APIView):
         playlist, error = self.get_playlist(request, playlist_id)
         if error:
             return error
-        if playlist.owner_id != request.user.id:
+        if not request.user.is_authenticated or playlist.owner_id != request.user.id:
             return Response({"detail": "Only the owner can delete this playlist."}, status=status.HTTP_403_FORBIDDEN)
         playlist.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PublicPlaylistListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        query = (request.query_params.get("q") or "").strip()
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", 24)), 60))
+        except ValueError:
+            limit = 24
+        playlists = (
+            Playlist.objects.filter(is_public=True)
+            .annotate(
+                nb_tracks=Count("entries", distinct=True),
+                saves_count=Count("saves", distinct=True),
+            )
+            .select_related("owner")
+            .prefetch_related("entries__track")
+            .order_by("-updated_at")
+        )
+        if query:
+            playlists = playlists.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(owner__username__icontains=query)
+                | Q(owner__display_name__icontains=query)
+            )
+        return ok(
+            {
+                "items": PlaylistSerializer(
+                    playlists[:limit], many=True, context={"request": request}
+                ).data
+            }
+        )
+
+
+class PlaylistSaveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, playlist_id):
+        playlist = get_object_or_404(Playlist, pk=playlist_id)
+        if not playlist.is_public:
+            return Response(
+                {"detail": "Only public playlists can be saved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if playlist.owner_id == request.user.id:
+            return Response(
+                {"detail": "You already own this playlist."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        SavedPlaylist.objects.get_or_create(user=request.user, playlist=playlist)
+        return ok(
+            {
+                "saved": True,
+                "saves_count": playlist.saves.count(),
+            },
+            status.HTTP_201_CREATED,
+        )
+
+    def delete(self, request, playlist_id):
+        playlist = get_object_or_404(Playlist, pk=playlist_id)
+        SavedPlaylist.objects.filter(user=request.user, playlist=playlist).delete()
+        return ok({"saved": False, "saves_count": playlist.saves.count()})
 
 
 class PlaylistTracksView(APIView):
@@ -900,14 +1229,30 @@ class LibraryView(APIView):
     def get(self, request):
         playlists = (
             Playlist.objects.filter(owner=request.user)
-            .annotate(nb_tracks=Count("entries"))
+            .annotate(
+                nb_tracks=Count("entries", distinct=True),
+                saves_count=Count("saves", distinct=True),
+            )
             .prefetch_related("entries__track")
+        )
+        saved = (
+            Playlist.objects.filter(saves__user=request.user, is_public=True)
+            .annotate(
+                nb_tracks=Count("entries", distinct=True),
+                saves_count=Count("saves", distinct=True),
+            )
+            .select_related("owner")
+            .prefetch_related("entries__track")
+            .order_by("-saves__created_at")
         )
         likes = LikedTrack.objects.filter(user=request.user).select_related("track")
         follows = FollowedArtist.objects.filter(user=request.user)
         return ok(
             {
                 "playlists": PlaylistSerializer(playlists, many=True, context={"request": request}).data,
+                "saved_playlists": PlaylistSerializer(
+                    saved, many=True, context={"request": request}
+                ).data,
                 "liked": {
                     "count": likes.count(),
                     "items": LikeSerializer(likes[:20], many=True, context={"request": request}).data,
@@ -922,6 +1267,9 @@ class ProfileStatsView(APIView):
 
     def get(self, request):
         user = request.user
+        friendships = Friendship.objects.filter(status=Friendship.Status.ACCEPTED).filter(
+            Q(requester=user) | Q(addressee=user)
+        )
         return ok(
             {
                 "user": UserSerializer(user, context={"request": request}).data,
@@ -930,6 +1278,9 @@ class ProfileStatsView(APIView):
                     "liked": LikedTrack.objects.filter(user=user).count(),
                     "following": FollowedArtist.objects.filter(user=user).count(),
                     "played": PlayHistory.objects.filter(user=user).count(),
+                    "friends": friendships.count(),
+                    "badges": user.badges.count(),
+                    "saved_playlists": SavedPlaylist.objects.filter(user=user).count(),
                 },
             }
         )

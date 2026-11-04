@@ -39,7 +39,7 @@ import { api } from "@/lib/api";
 import type { SearchSuggestions } from "@/lib/types";
 import { cn, initials } from "@/lib/utils";
 
-type SuggestKind = "track" | "artist" | "album" | "playlist" | "recent" | "all";
+type SuggestKind = "track" | "artist" | "album" | "playlist" | "user" | "recent" | "all";
 
 interface SuggestItem {
   key: string;
@@ -58,7 +58,7 @@ interface SuggestGroup {
 
 function SuggestIcon({ kind }: { kind: SuggestKind }) {
   if (kind === "recent") return <Clock className="h-4 w-4" />;
-  if (kind === "artist") return <UserRound className="h-4 w-4" />;
+  if (kind === "artist" || kind === "user") return <UserRound className="h-4 w-4" />;
   if (kind === "album") return <Disc3 className="h-4 w-4" />;
   if (kind === "playlist") return <Music2 className="h-4 w-4" />;
   return <Search className="h-4 w-4" />;
@@ -165,6 +165,20 @@ export function Topbar() {
     if (!trimmedQuery) return [];
 
     const next: SuggestGroup[] = [];
+    if (suggestions?.users?.length) {
+      next.push({
+        title: "People",
+        items: suggestions.users.map((person) => ({
+          key: `user-${person.id}`,
+          label: person.name,
+          meta: `@${person.username}`,
+          image: person.avatar || undefined,
+          href: `/user/${person.username}`,
+          kind: "user",
+          round: true,
+        })),
+      });
+    }
     if (suggestions?.tracks?.length) {
       next.push({
         title: "Songs",
@@ -242,7 +256,8 @@ export function Topbar() {
     suggestions?.tracks?.length ||
       suggestions?.artists?.length ||
       suggestions?.albums?.length ||
-      suggestions?.playlists?.length,
+      suggestions?.playlists?.length ||
+      suggestions?.users?.length,
   );
   const showPanel = suggestOpen && (trimmedQuery.length >= 2 || (!trimmedQuery && recent.length > 0));
 
@@ -343,7 +358,7 @@ export function Topbar() {
             setActiveIndex(-1);
           }}
           onKeyDown={onSearchKeyDown}
-          placeholder="Search songs, artists, albums"
+          placeholder="Search songs, artists, people"
           aria-label="Search music"
           autoComplete="off"
           spellCheck={false}
