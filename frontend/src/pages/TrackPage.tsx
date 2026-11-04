@@ -24,7 +24,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { downloadTrack as downloadTrackFile } from "@/lib/download";
+import { saveTrackAudioFile } from "@/lib/download";
 import type { Album, Artist, Lyrics, Track } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
 import { MediaCard } from "@/components/music/MediaCard";
@@ -305,12 +305,18 @@ export function TrackPage() {
     }
   };
 
-  const handleDownloadFile = () => {
-    if (!downloadTrackFile(track)) {
+  const handleDownloadFile = async () => {
+    const result = await saveTrackAudioFile(track);
+    if (!result) {
       toast("Full audio is not available for this song.", "error");
       return;
     }
-    toast("Download started. Check your Downloads folder.", "success");
+    toast(
+      result === "offline"
+        ? "Saved the offline copy. Check your Downloads folder."
+        : "Download started. Check your Downloads folder.",
+      "success",
+    );
   };
 
   const downloaded = offlineItems.some((item) => item.id === track.id);
@@ -503,7 +509,7 @@ export function TrackPage() {
                     ? "Remove download"
                     : "Download for offline"}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleDownloadFile}>
+              <DropdownMenuItem onClick={() => void handleDownloadFile()}>
                 <FileDown className="h-4 w-4" /> Save audio file
               </DropdownMenuItem>
             </DropdownMenuContent>

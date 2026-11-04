@@ -32,7 +32,7 @@ import { useAuthStore } from "@/store/auth";
 import { useUiStore } from "@/store/ui";
 import type { Track } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
-import { downloadTrack } from "@/lib/download";
+import { saveTrackAudioFile } from "@/lib/download";
 import { LikeButton } from "@/components/music/LikeButton";
 
 export function Equalizer({ playing }: { playing: boolean }) {
@@ -97,12 +97,18 @@ export function TrackList({
     }
   };
 
-  const handleDownload = (track: Track) => {
-    if (!downloadTrack(track)) {
+  const handleDownload = async (track: Track) => {
+    const result = await saveTrackAudioFile(track);
+    if (!result) {
       toast("Full audio is not available for this song.", "error");
       return;
     }
-    toast("Download started. Check your Downloads folder.", "success");
+    toast(
+      result === "offline"
+        ? "Saved the offline copy. Check your Downloads folder."
+        : "Download started. Check your Downloads folder.",
+      "success",
+    );
   };
 
   const handleOfflineDownload = async (track: Track) => {
@@ -330,7 +336,7 @@ export function TrackList({
                     </DropdownMenuItem>
                     {!imported && (
                       <>
-                        <DropdownMenuItem onClick={() => handleDownload(track)}>
+                        <DropdownMenuItem onClick={() => void handleDownload(track)}>
                           <FileDown className="h-4 w-4" /> Save audio file
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
