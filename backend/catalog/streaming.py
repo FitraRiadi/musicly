@@ -37,7 +37,7 @@ SEARCH_BUDGET = 60
 STREAM_TIMEOUT = (5, 90)
 CHUNK = 64 * 1024
 RESOLVE_TTL = 60 * 60 * 24 * 30
-RESOLVE_CACHE_VERSION = 2
+RESOLVE_CACHE_VERSION = 3
 NEGATIVE_TTL = 20
 
 _TOKEN_RE = re.compile(r"[^a-z0-9]+")
@@ -142,6 +142,9 @@ def _search_results(track, limit: int, deadline: float) -> list[dict]:
     if remaining <= 1:
         raise StreamUnavailable("Scraper search timed out.")
     query = f"{track.artist_name} {track.title}".strip() or track.title
+    # Without this bias the first hit is often the long music video.
+    if not re.search(r"\baudio\b", query, re.IGNORECASE):
+        query = f"{query} audio"
     try:
         response = SESSION.post(
             f"{_base()}/api/search",
@@ -160,26 +163,10 @@ def _search_results(track, limit: int, deadline: float) -> list[dict]:
 
 
 def _search_video_id(track) -> str:
-    # ``ytsearch1`` is dramatically faster than asking the scraper for five
-    # results, which is what most tracks need. Only fall back to a wider search
-    # when the top hit looks suspicious (live/cover/etc.) or scores poorly.
+    # One scraper search per uncached play; the audio query bias fixes the match.
     deadline = time.monotonic() + SEARCH_BUDGET
-    results = _search_results(track, 1, deadline)
-    best = results[0]
+    best = _search_results(track, 1, deadline)[0]
     score = _candidate_score(track, best)
-    title = (track.title or "").lower()
-    candidate = (best.get("title") or "").lower()
-    suspicious = any(
-        re.search(rf"\b{re.escape(marker)}\b", candidate)
-        and not re.search(rf"\b{re.escape(marker)}\b", title)
-        for marker in ("live", "cover", "instrumental", "karaoke", "reaction", "sped up", "nightcore", "slowed")
-    )
-
-    if score < 0.75 or suspicious or _duration_mismatch(track, best):
-        results = _search_results(track, 5, deadline)
-        results.sort(key=lambda item: _candidate_score(track, item), reverse=True)
-        best = results[0]
-        score = _candidate_score(track, best)
 
     if score < 0.35:
         logger.warning(
@@ -187,6 +174,15 @@ def _search_video_id(track) -> str:
             track.artist_name,
             track.title,
             score,
+            best.get("title"),
+        )
+    elif _duration_mismatch(track, best):
+        logger.info(
+            "Duration differs for %s - %s: track=%ss video=%ss (%s)",
+            track.artist_name,
+            track.title,
+            track.duration,
+            best.get("duration"),
             best.get("title"),
         )
     return str(best["id"])
