@@ -37,6 +37,7 @@ SEARCH_BUDGET = 60
 STREAM_TIMEOUT = (5, 90)
 CHUNK = 64 * 1024
 RESOLVE_TTL = 60 * 60 * 24 * 30
+RESOLVE_CACHE_VERSION = 2
 NEGATIVE_TTL = 20
 
 _TOKEN_RE = re.compile(r"[^a-z0-9]+")
@@ -69,6 +70,18 @@ def _ratio(left: str, right: str) -> float:
     return SequenceMatcher(None, left, right).ratio()
 
 
+def _duration_tolerance(track) -> float:
+    return max(45.0, int(track.duration or 0) * 0.25)
+
+
+def _duration_mismatch(track, result: dict) -> bool:
+    duration = int(track.duration or 0)
+    candidate_duration = int(result.get("duration") or 0)
+    if duration <= 0 or candidate_duration <= 0:
+        return False
+    return abs(duration - candidate_duration) > _duration_tolerance(track)
+
+
 def _candidate_score(track, result: dict) -> float:
     """Rank a YouTube search result against the Deezer track metadata."""
     title = _normalize(track.title)
@@ -90,10 +103,16 @@ def _candidate_score(track, result: dict) -> float:
 
     duration = int(track.duration or 0)
     candidate_duration = int(result.get("duration") or 0)
+    duration_penalty = 0.0
     if duration > 0 and candidate_duration > 0:
-        tolerance = max(45.0, duration * 0.25)
+        tolerance = _duration_tolerance(track)
         delta = abs(duration - candidate_duration)
         duration_score = max(0.0, 1.0 - delta / tolerance)
+        if delta > tolerance:
+            # Music videos often include long intros/outros that are not part
+            # of the song. Penalize a large mismatch so the official audio can
+            # outrank the video even when the title and channel match.
+            duration_penalty = min(0.5, ((delta - tolerance) / tolerance) * 0.5)
     else:
         duration_score = 0.5
 
@@ -115,7 +134,7 @@ def _candidate_score(track, result: dict) -> float:
         if re.search(rf"\b{re.escape(marker)}\b", raw_title) and marker not in title:
             penalty += 0.15
 
-    return 0.5 * title_score + 0.3 * artist_score + 0.2 * duration_score + bonus - penalty
+    return 0.5 * title_score + 0.3 * artist_score + 0.2 * duration_score + bonus - penalty - duration_penalty
 
 
 def _search_results(track, limit: int, deadline: float) -> list[dict]:
@@ -156,7 +175,7 @@ def _search_video_id(track) -> str:
         for marker in ("live", "cover", "instrumental", "karaoke", "reaction", "sped up", "nightcore", "slowed")
     )
 
-    if score < 0.75 or suspicious:
+    if score < 0.75 or suspicious or _duration_mismatch(track, best):
         results = _search_results(track, 5, deadline)
         results.sort(key=lambda item: _candidate_score(track, item), reverse=True)
         best = results[0]
@@ -175,7 +194,7 @@ def _search_video_id(track) -> str:
 
 def resolve_video_id(track, *, force: bool = False) -> str:
     """Return (and cache) the YouTube video id for a cached Track row."""
-    key = f"yt:resolve:{track.deezer_id}"
+    key = f"yt:resolve:v{RESOLVE_CACHE_VERSION}:{track.deezer_id}"
     miss_key = f"{key}:miss"
     if force:
         # A forced retry exists because the old match stopped working. Do not

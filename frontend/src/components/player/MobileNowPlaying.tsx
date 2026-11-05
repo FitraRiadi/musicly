@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import {
   ChevronDown,
+  ListMusic,
+  ListPlus,
   Loader2,
   Lock,
   Pause,
@@ -19,10 +21,11 @@ import { cn, formatDuration, gradientFromString } from "@/lib/utils";
 import { LikeButton } from "@/components/music/LikeButton";
 
 export function MobileNowPlaying() {
-  const { queue, index, isPlaying, buffering, progress, duration, shuffle, repeat, context, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setLyricsOpen } =
+  const { queue, index, isPlaying, buffering, progress, duration, shuffle, repeat, context, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setLyricsOpen, setQueueOpen } =
     usePlayerStore();
   const open = useUiStore((state) => state.mobilePlayerOpen);
   const setOpen = useUiStore((state) => state.setMobilePlayerOpen);
+  const openAddToPlaylist = useUiStore((state) => state.openAddToPlaylist);
   const hubRoom = useSongHubStore((state) => state.room);
   const hubMe = useSongHubStore((state) => state.me);
   const listenOnly = Boolean(hubRoom && hubMe?.role === "member");
@@ -47,13 +50,23 @@ export function MobileNowPlaying() {
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/60">Playing from</p>
             <p className="max-w-[200px] truncate text-xs font-semibold">{context || "Musicly"}</p>
           </div>
-          <button
-            onClick={() => setLyricsOpen(true)}
-            className="rounded-full p-2 text-white/75 transition hover:bg-white/10 hover:text-white"
-            aria-label="Show lyrics"
-          >
-            <Quote className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setQueueOpen(true)}
+              className="rounded-full p-2 text-white/75 transition hover:bg-white/10 hover:text-white"
+              aria-label="Open queue"
+              title="Open queue"
+            >
+              <ListMusic className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => setLyricsOpen(true)}
+              className="rounded-full p-2 text-white/75 transition hover:bg-white/10 hover:text-white"
+              aria-label="Show lyrics"
+            >
+              <Quote className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-1 flex-col justify-center gap-6">
@@ -84,7 +97,17 @@ export function MobileNowPlaying() {
                 </span>
               )}
             </div>
-            <LikeButton track={track} />
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                onClick={() => openAddToPlaylist(track)}
+                className="flex h-10 w-10 items-center justify-center rounded-full text-white/70 transition hover:bg-white/10 hover:text-white"
+                aria-label="Add to playlist"
+                title="Add to playlist"
+              >
+                <ListPlus className="h-5 w-5" />
+              </button>
+              <LikeButton track={track} />
+            </div>
           </div>
 
           <div>

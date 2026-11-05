@@ -301,6 +301,14 @@ export function PlayerBar() {
           >
             <SkipForward className="h-4 w-4 fill-current" />
           </button>
+          <button
+            onClick={() => setQueueOpen(!queueOpen)}
+            className={cn("p-1 transition hover:text-white", queueOpen ? "text-primary" : "text-white/70")}
+            aria-label="Open queue"
+            title="Open queue"
+          >
+            <ListMusic className="h-4 w-4" />
+          </button>
         </div>
         <div className="mx-2 h-[2px] overflow-hidden rounded-full bg-white/15">
           <div

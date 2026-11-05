@@ -67,22 +67,27 @@ export function QueuePanel() {
     reorderQueue(itemIndex, target);
   };
 
+  const playFromQueue = (itemIndex: number) => {
+    jumpTo(itemIndex);
+    if (window.matchMedia("(max-width: 767px)").matches) setQueueOpen(false);
+  };
+
   return (
     <aside
       ref={panelRef}
       style={panelStyle}
       className={cn(
-        "fixed right-3 top-3 z-40 hidden w-[350px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-ink-800/95 shadow-2xl backdrop-blur-2xl md:flex md:h-[min(640px,calc(100dvh-140px))] md:translate-x-[var(--panel-x)] md:translate-y-[var(--panel-y)]",
-        dragging && "ring-1 ring-primary/35",
+        "fixed inset-0 z-[80] flex flex-col overflow-hidden bg-ink-800/95 pb-safe pt-safe backdrop-blur-2xl md:inset-auto md:right-3 md:top-3 md:z-40 md:h-[min(640px,calc(100dvh-140px))] md:w-[350px] md:translate-x-[var(--panel-x)] md:translate-y-[var(--panel-y)] md:rounded-2xl md:border md:border-white/10 md:bg-ink-800/95 md:pb-0 md:pt-0 md:shadow-2xl",
+        dragging && "md:ring-1 md:ring-primary/35",
       )}
     >
       <div
         {...dragHandleProps}
-        className="flex cursor-grab touch-none items-center justify-between border-b border-white/10 px-4 py-3 active:cursor-grabbing"
+        className="flex items-center justify-between border-b border-white/10 px-4 py-3 md:cursor-grab md:touch-none md:active:cursor-grabbing md:pt-3"
         title="Drag to move"
       >
         <div className="flex min-w-0 items-center gap-2">
-          <GripHorizontal className="h-4 w-4 shrink-0 text-white/20" />
+          <GripHorizontal className="hidden h-4 w-4 shrink-0 text-white/20 md:block" />
           <div className="min-w-0">
             <h2 className="text-sm font-bold">Queue</h2>
             <p className="text-[11px] text-white/45">
@@ -124,7 +129,7 @@ export function QueuePanel() {
         {upNext > 0 && (
           <div className="flex items-center justify-between px-2 pb-1 pt-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-white/40">Next up</p>
-            {canReorder && <p className="text-[10px] text-white/30">Drag to reorder</p>}
+            {canReorder && <p className="hidden text-[10px] text-white/30 md:block">Drag to reorder</p>}
           </div>
         )}
         {queue.map((track, i) => {
@@ -151,11 +156,11 @@ export function QueuePanel() {
                 aria-label={`Reorder ${track.title}. Use arrow up or down.`}
                 title="Drag to reorder"
                 onKeyDown={(event) => handleReorderKey(event, i)}
-                className="-ml-1 shrink-0 cursor-grab rounded p-1 text-white/25 transition hover:bg-white/10 hover:text-white group-hover:text-white/50 active:cursor-grabbing"
+                className="-ml-1 hidden shrink-0 cursor-grab rounded p-1 text-white/25 transition hover:bg-white/10 hover:text-white group-hover:text-white/50 active:cursor-grabbing md:block"
               >
                 <GripVertical className="h-3.5 w-3.5" />
               </button>
-              <button onClick={() => jumpTo(i)} className="relative shrink-0" aria-label={`Play ${track.title}`}>
+              <button onClick={() => playFromQueue(i)} className="relative shrink-0" aria-label={`Play ${track.title}`}>
                 <img src={track.album.cover_small || track.album.cover} alt="" className="h-10 w-10 rounded object-cover" />
                 <span className="absolute inset-0 flex items-center justify-center rounded bg-black/50 opacity-0 transition group-hover:opacity-100">
                   <Play className="h-3.5 w-3.5 fill-current" />
@@ -174,7 +179,7 @@ export function QueuePanel() {
               )}
               <button
                 onClick={() => removeFromQueue(i)}
-                className="rounded p-1 text-white/40 opacity-0 transition hover:text-white group-hover:opacity-100"
+                className="rounded p-1 text-white/40 opacity-100 transition hover:text-white md:opacity-0 md:group-hover:opacity-100"
                 aria-label="Remove from queue"
               >
                 <X className="h-3.5 w-3.5" />
