@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from difflib import SequenceMatcher
 
 import requests
@@ -32,11 +33,11 @@ SESSION.headers.update(
     }
 )
 
-SEARCH_TIMEOUT = (5, 120)
+SEARCH_BUDGET = 60
 STREAM_TIMEOUT = (5, 90)
 CHUNK = 64 * 1024
 RESOLVE_TTL = 60 * 60 * 24 * 30
-NEGATIVE_TTL = 60
+NEGATIVE_TTL = 20
 
 _TOKEN_RE = re.compile(r"[^a-z0-9]+")
 _BRACKET_RE = re.compile(r"\([^)]*\)|\[[^\]]*\]")
@@ -117,13 +118,16 @@ def _candidate_score(track, result: dict) -> float:
     return 0.5 * title_score + 0.3 * artist_score + 0.2 * duration_score + bonus - penalty
 
 
-def _search_video_id(track) -> str:
+def _search_results(track, limit: int, deadline: float) -> list[dict]:
+    remaining = deadline - time.monotonic()
+    if remaining <= 1:
+        raise StreamUnavailable("Scraper search timed out.")
     query = f"{track.artist_name} {track.title}".strip() or track.title
     try:
         response = SESSION.post(
             f"{_base()}/api/search",
-            json={"query": query, "limit": 5},
-            timeout=SEARCH_TIMEOUT,
+            json={"query": query, "limit": limit},
+            timeout=(min(5.0, remaining), remaining),
         )
         response.raise_for_status()
         payload = response.json()
@@ -133,10 +137,31 @@ def _search_video_id(track) -> str:
     results = [item for item in (payload.get("results") or []) if item.get("id")]
     if not results:
         raise StreamUnavailable("No YouTube match found for this track.")
+    return results
 
-    ranked = sorted(results, key=lambda item: _candidate_score(track, item), reverse=True)
-    best = ranked[0]
+
+def _search_video_id(track) -> str:
+    # ``ytsearch1`` is dramatically faster than asking the scraper for five
+    # results, which is what most tracks need. Only fall back to a wider search
+    # when the top hit looks suspicious (live/cover/etc.) or scores poorly.
+    deadline = time.monotonic() + SEARCH_BUDGET
+    results = _search_results(track, 1, deadline)
+    best = results[0]
     score = _candidate_score(track, best)
+    title = (track.title or "").lower()
+    candidate = (best.get("title") or "").lower()
+    suspicious = any(
+        re.search(rf"\b{re.escape(marker)}\b", candidate)
+        and not re.search(rf"\b{re.escape(marker)}\b", title)
+        for marker in ("live", "cover", "instrumental", "karaoke", "reaction", "sped up", "nightcore", "slowed")
+    )
+
+    if score < 0.75 or suspicious:
+        results = _search_results(track, 5, deadline)
+        results.sort(key=lambda item: _candidate_score(track, item), reverse=True)
+        best = results[0]
+        score = _candidate_score(track, best)
+
     if score < 0.35:
         logger.warning(
             "Low match confidence for %s - %s: %.2f (%s)",
@@ -152,7 +177,11 @@ def resolve_video_id(track, *, force: bool = False) -> str:
     """Return (and cache) the YouTube video id for a cached Track row."""
     key = f"yt:resolve:{track.deezer_id}"
     miss_key = f"{key}:miss"
-    if not force:
+    if force:
+        # A forced retry exists because the old match stopped working. Do not
+        # leave it in the cache if the fresh search also fails.
+        cache.delete(key)
+    else:
         cached = cache.get(key)
         if cached:
             return cached
@@ -199,13 +228,14 @@ def _iter_upstream(upstream):
         upstream.close()
 
 
-def stream_response(track, request, *, ignore_range: bool = False):
+def stream_response(track, request, *, ignore_range: bool = False, force: bool = False):
     """Proxy the scraper's audio stream, preserving HTTP Range semantics.
 
     Returns ``None`` when the scraper is disabled or cannot serve the track so
     the caller can fall back to the Deezer preview. ``ignore_range`` is used by
     the download endpoint so a download manager's partial request cannot turn
-    the saved file into a fragment.
+    the saved file into a fragment. ``force`` bypasses a cached YouTube match,
+    which lets the player retry after a stream URL goes stale.
     """
     if not enabled():
         return None
@@ -215,7 +245,7 @@ def stream_response(track, request, *, ignore_range: bool = False):
         range_header = (request.headers.get("Range") or "").strip() or None
 
     try:
-        video_id = resolve_video_id(track)
+        video_id = resolve_video_id(track, force=force)
         upstream = _open_upstream(video_id, range_header)
         if upstream.status_code in (401, 403, 404):
             upstream.close()

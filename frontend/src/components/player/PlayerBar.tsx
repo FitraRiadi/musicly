@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import {
   ListMusic,
+  Loader2,
   Lock,
   Maximize2,
   Pause,
@@ -221,7 +222,7 @@ export function PlayerBar() {
             </button>
           </div>
           <div className="flex w-full max-w-[620px] items-center">
-            <ProgressBar disabled={listenOnly} />
+            <ProgressBar disabled={listenOnly || buffering} />
           </div>
         </div>
 
@@ -282,8 +283,15 @@ export function PlayerBar() {
             disabled={listenOnly}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-black disabled:opacity-40"
             aria-label={isPlaying ? "Pause" : "Play"}
+            aria-busy={buffering}
           >
-            {isPlaying ? <Pause className="h-3.5 w-3.5 fill-current" /> : <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />}
+            {buffering && !isPlaying ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="h-3.5 w-3.5 fill-current" />
+            ) : (
+              <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
+            )}
           </button>
           <button
             onClick={() => next()}

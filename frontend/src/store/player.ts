@@ -4,6 +4,7 @@ import { getOfflineAudio } from "@/lib/offline";
 import { songHubGate } from "@/lib/songhub-gate";
 import type { Track } from "@/lib/types";
 import { shuffleArray } from "@/lib/utils";
+import { useUiStore } from "@/store/ui";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -96,14 +97,36 @@ let prefetchedTrackId = "";
 let prefetchedSource = "";
 let activeSource = "";
 let prefetchWhenPlaying: (() => void) | null = null;
+let hasStartedSource = false;
+let recoveryTimer: number | null = null;
+let recoveryAttempt = 0;
+let currentSourceKind: "full" | "preview" | "offline" = "full";
+let currentAutoplay = true;
+let recoverPlayback: ((reason: "error" | "timeout") => void) | null = null;
+
+type StartOptions = { forcePreview?: boolean; refresh?: boolean; attempt?: number };
+
+function clearRecoveryTimer() {
+  if (recoveryTimer !== null) {
+    window.clearTimeout(recoveryTimer);
+    recoveryTimer = null;
+  }
+}
+
+function withRefresh(url: string) {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}refresh=1&retry=${Date.now()}`;
+}
 
 function bindAudioElement(element: HTMLAudioElement) {
   element.preload = "auto";
-  element.addEventListener("play", () => {
-    if (element === audio) usePlayerStore.setState({ isPlaying: true });
-  });
+  // `play` only means playback was requested. `playing` is the event that
+  // confirms the media clock is actually moving, so we never report progress
+  // before that point.
   element.addEventListener("pause", () => {
-    if (element === audio) usePlayerStore.setState({ isPlaying: false });
+    if (element !== audio) return;
+    clearRecoveryTimer();
+    usePlayerStore.setState({ isPlaying: false });
   });
   element.addEventListener("waiting", () => {
     if (element === audio) usePlayerStore.setState({ buffering: true });
@@ -114,13 +137,25 @@ function bindAudioElement(element: HTMLAudioElement) {
   element.addEventListener("playing", () => {
     if (element !== audio) return;
     if (!activeSource || element.src !== activeSource) return;
-    usePlayerStore.setState({ buffering: false, isPlaying: true });
+    hasStartedSource = true;
+    clearRecoveryTimer();
+    usePlayerStore.setState({
+      buffering: false,
+      isPlaying: true,
+      progress: element.currentTime,
+      duration:
+        Number.isFinite(element.duration) && element.duration > 0
+          ? element.duration
+          : usePlayerStore.getState().duration,
+    });
     prefetchWhenPlaying?.();
   });
   element.addEventListener("canplay", () => {
     if (element !== audio) return;
     if (!activeSource || element.src !== activeSource) return;
-    usePlayerStore.setState({ buffering: false });
+    // A paused element is ready but not autoplaying (for example a paused
+    // Song Hub sync). Keep the spinner for autoplay until `playing` fires.
+    if (element.paused) usePlayerStore.setState({ buffering: false });
   });
   element.addEventListener("loadedmetadata", () => {
     if (element !== audio) return;
@@ -132,6 +167,9 @@ function bindAudioElement(element: HTMLAudioElement) {
   element.addEventListener("timeupdate", () => {
     if (element !== audio) return;
     if (!activeSource || element.src !== activeSource) return;
+    // Ignore the browser's pre-play clock updates. This is what made the
+    // progress bar move while a stream was still being prepared.
+    if (!hasStartedSource) return;
     usePlayerStore.setState({
       progress: element.currentTime,
       duration:
@@ -143,12 +181,15 @@ function bindAudioElement(element: HTMLAudioElement) {
   element.addEventListener("ended", () => {
     if (element !== audio) return;
     if (!activeSource || element.src !== activeSource) return;
+    hasStartedSource = false;
     usePlayerStore.getState().next(true);
   });
   element.addEventListener("error", () => {
     if (element !== audio) return;
     if (!activeSource || element.src !== activeSource) return;
+    hasStartedSource = false;
     usePlayerStore.setState({ isPlaying: false, buffering: false });
+    recoverPlayback?.("error");
   });
 }
 
@@ -166,9 +207,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     standby.load();
   };
 
-  const sourceFor = (track: Track) => {
-    if (track.has_full_audio && track.stream_url) return apiUrl(track.stream_url);
+  const previewSourceFor = (track: Track) => {
+    // Prefer the backend's preview endpoint. It follows a fresh Deezer redirect
+    // because signed preview URLs embedded in catalog payloads expire.
+    const previewEndpoint = track.stream_url?.replace(/\/stream\/?$/, "/preview/");
+    if (previewEndpoint) return apiUrl(previewEndpoint);
+    if (track.deezer_id) return apiUrl(`/tracks/dz-${track.deezer_id}/preview/`);
+    if (/^\d+$/.test(track.id)) return apiUrl(`/tracks/dz-${track.id}/preview/`);
     return track.preview ? apiUrl(track.preview) : "";
+  };
+
+  const sourceFor = (track: Track, options: StartOptions = {}) => {
+    if (!options.forcePreview && track.has_full_audio && track.stream_url) {
+      const source = apiUrl(track.stream_url);
+      return options.refresh ? withRefresh(source) : source;
+    }
+    const preview = previewSourceFor(track);
+    return options.refresh && preview ? withRefresh(preview) : preview;
   };
 
   /**
@@ -228,10 +283,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       .catch(() => undefined);
   };
 
-  const startTrack = (track: Track, autoplay = true, startAt = 0) => {
+  const startTrack = (track: Track, autoplay = true, startAt = 0, options: StartOptions = {}) => {
     if (!audio) return;
     const requestId = ++startRequest;
-    const remoteSource = sourceFor(track);
+    const remoteSource = sourceFor(track, options);
+    const isRecovery = Boolean(options.attempt);
+
+    recoveryAttempt = options.attempt ?? 0;
+    currentAutoplay = autoplay;
+    currentSourceKind = options.forcePreview
+      ? "preview"
+      : track.has_full_audio && track.stream_url
+        ? "full"
+        : "preview";
+    hasStartedSource = false;
+    clearRecoveryTimer();
 
     // Stop the previous stream before resolving the new one. Leaving the old
     // request open lets it compete with the new stream in the proxy, which is
@@ -250,6 +316,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       duration: track.duration || 30,
     });
 
+    const armWatchdog = (kind: "full" | "preview" | "offline") => {
+      clearRecoveryTimer();
+      const timeout = kind === "full" ? 75000 : 20000;
+      recoveryTimer = window.setTimeout(() => {
+        if (requestId !== startRequest || hasStartedSource) return;
+        recoverPlayback?.("timeout");
+      }, timeout);
+    };
+
     const activateSource = (source: string, objectUrl: string | null) => {
       if (requestId !== startRequest) {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -261,7 +336,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         Boolean(remoteSource) &&
         prefetchedTrackId === track.id &&
         prefetchedSource === remoteSource &&
-        Boolean(standby);
+        Boolean(standby) &&
+        !standby.error;
 
       if (usePrefetched) {
         const previous = audio;
@@ -286,24 +362,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         audio.src = source;
       }
 
+      const kind = objectUrl ? "offline" : options.forcePreview ? "preview" : "full";
+      currentSourceKind = kind;
       activeSource = audio.src || source;
+      hasStartedSource = false;
       currentOfflineUrl = objectUrl;
       audio.volume = get().muted ? 0 : get().volume;
       const safeStart = Math.max(0, startAt || 0);
       audio.currentTime = safeStart;
-      set({ duration: track.duration || 30, progress: safeStart, buffering: true });
+      set({ duration: track.duration || 30, progress: safeStart, buffering: true, isPlaying: false });
       if (autoplay) {
+        armWatchdog(kind);
         audio
           .play()
-          .then(() => {
+          .catch((error: unknown) => {
             if (requestId !== startRequest) return;
-            // play() can resolve before any media data is available. Keep the
-            // loading state until the element can actually render audio; the
-            // `playing` event clears it as soon as real playback starts.
-            if (audio.readyState >= 2) set({ isPlaying: true, buffering: false });
-          })
-          .catch(() => {
-            if (requestId === startRequest) set({ isPlaying: false, buffering: false });
+            const name = error instanceof DOMException ? error.name : "";
+            // Switching tracks aborts the previous play() promise on purpose.
+            if (name === "AbortError") return;
+            // Autoplay policy is a user-gesture problem, not a broken stream.
+            if (name === "NotAllowedError") {
+              clearRecoveryTimer();
+              set({ isPlaying: false, buffering: false });
+              return;
+            }
+            recoverPlayback?.("error");
           });
       } else {
         set({ isPlaying: false, buffering: false });
@@ -311,12 +394,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     };
 
     syncMediaSession(track);
-    if (track.source !== "imported") reportHistory(track, get().context);
-    if (songHubGate.active && songHubGate.isHost && !songHubGate.applyingRemote) {
-      if (suppressBroadcastFor === track.id) {
-        suppressBroadcastFor = null;
-      } else if (track.source !== "imported") {
-        songHubGate.onHostTrackStarted?.(track);
+    if (!isRecovery) {
+      if (track.source !== "imported") reportHistory(track, get().context);
+      if (songHubGate.active && songHubGate.isHost && !songHubGate.applyingRemote) {
+        if (suppressBroadcastFor === track.id) {
+          suppressBroadcastFor = null;
+        } else if (track.source !== "imported") {
+          songHubGate.onHostTrackStarted?.(track);
+        }
       }
     }
 
@@ -336,6 +421,57 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         if (remoteSource) activateSource(remoteSource, null);
         else set({ isPlaying: false, buffering: false });
       });
+  };
+
+  recoverPlayback = (reason) => {
+    if (!audio) return;
+    const state = get();
+    const track = state.queue[state.index];
+    if (!track || !currentAutoplay) {
+      set({ isPlaying: false, buffering: false });
+      return;
+    }
+
+    clearRecoveryTimer();
+    const position = hasStartedSource ? Math.max(0, audio.currentTime || 0) : 0;
+
+    // One quick retry for a broken resolver, then fall back to the preview.
+    // A timeout means the resolver is too slow, so don't make the user wait
+    // for a second full attempt.
+    if (
+      reason === "error" &&
+      recoveryAttempt === 0 &&
+      currentSourceKind === "full" &&
+      track.has_full_audio &&
+      track.stream_url
+    ) {
+      recoveryAttempt = 1;
+      startTrack(track, true, position, { refresh: true, attempt: 1 });
+      return;
+    }
+
+    if (currentSourceKind !== "preview" && previewSourceFor(track)) {
+      recoveryAttempt = 2;
+      useUiStore.getState().toast(
+        reason === "timeout"
+          ? "Full song is taking too long — playing a preview."
+          : "Full song unavailable — playing a preview.",
+        "error",
+      );
+      startTrack(track, true, 0, { forcePreview: true, attempt: 2 });
+      return;
+    }
+
+    // A preview can fail transiently (CDN/network). Retry it once with a fresh
+    // URL before giving up so one flaky request does not kill playback.
+    if (currentSourceKind === "preview" && recoveryAttempt < 3 && previewSourceFor(track)) {
+      recoveryAttempt = 3;
+      startTrack(track, true, position, { forcePreview: true, attempt: 3, refresh: true });
+      return;
+    }
+
+    set({ isPlaying: false, buffering: false });
+    useUiStore.getState().toast("Couldn't play this song. Tap play to try again.", "error");
   };
 
   // The `playing` event is a module-level listener, so expose the prefetch
@@ -406,18 +542,36 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     togglePlay: () => {
       if (!audio) return;
       if (playbackLocked()) return;
-      if (!get().queue.length) return;
+      const { queue, index, buffering, isPlaying, progress } = get();
+      const track = queue[index];
+      if (!track) return;
+
+      // If a previous stream failed, tapping play must retry that same track
+      // instead of silently doing nothing on a dead <audio> element.
+      if (!activeSource || audio.error) {
+        startTrack(track, true, Math.max(0, progress));
+        return;
+      }
+
+      // Tapping play while the song is still opening acts as a manual retry.
+      if (buffering && !isPlaying) {
+        startTrack(track, true, Math.max(0, progress));
+        return;
+      }
+
       if (audio.paused) {
+        currentAutoplay = true;
+        set({ buffering: true });
         audio
           .play()
           .then(() => {
-            set({ isPlaying: true });
             syncHostPlayback(true, audio.currentTime);
           })
-          .catch(() => set({ isPlaying: false }));
+          .catch(() => recoverPlayback?.("error"));
       } else {
+        currentAutoplay = false;
         audio.pause();
-        set({ isPlaying: false });
+        set({ isPlaying: false, buffering: false });
         syncHostPlayback(false, audio.currentTime);
       }
     },
@@ -427,8 +581,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const { queue, index, repeat } = get();
       if (!queue.length) return;
       if (automatic && repeat === "one") {
+        if (audio.error || !activeSource) {
+          startTrack(queue[index], true, 0);
+          return;
+        }
+        clearRecoveryTimer();
         audio.currentTime = 0;
-        audio.play().catch(() => undefined);
+        hasStartedSource = false;
+        set({ progress: 0, buffering: true });
+        audio.play().catch(() => recoverPlayback?.("error"));
         return;
       }
       if (index + 1 < queue.length) {
@@ -445,7 +606,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       }
       audio.pause();
       audio.currentTime = 0;
-      set({ isPlaying: false, progress: 0, index: 0 });
+      currentAutoplay = false;
+      set({ isPlaying: false, buffering: false, progress: 0, index: 0 });
       syncHostPlayback(false, 0);
       resetStandby();
     },
@@ -467,9 +629,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     seek: (seconds) => {
       if (!audio) return;
       if (playbackLocked()) return;
-      audio.currentTime = seconds;
-      set({ progress: seconds });
-      syncHostPlayback(!audio.paused, seconds);
+      if (!activeSource) return;
+      const duration = get().duration;
+      const target = Math.max(0, duration > 0 ? Math.min(seconds, duration) : seconds);
+      audio.currentTime = target;
+      set({ progress: target });
+      syncHostPlayback(!audio.paused, target);
     },
 
     setVolume: (volume) => {
@@ -567,6 +732,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       prefetchToken += 1;
       prefetchedTrackId = "";
       prefetchedSource = "";
+      clearRecoveryTimer();
+      hasStartedSource = false;
+      recoveryAttempt = 0;
+      currentSourceKind = "full";
       if (audio) {
         audio.pause();
         audio.removeAttribute("src");
@@ -582,7 +751,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         URL.revokeObjectURL(currentOfflineUrl);
         currentOfflineUrl = null;
       }
-      set({ queue: [], index: -1, isPlaying: false, progress: 0, duration: 0, context: "", lyricsOpen: false });
+      set({
+        queue: [],
+        index: -1,
+        isPlaying: false,
+        buffering: false,
+        progress: 0,
+        duration: 0,
+        context: "",
+        lyricsOpen: false,
+      });
     },
 
     setQueueOpen: (open) =>
@@ -607,10 +785,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         return;
       }
       if (playing && audio.paused) {
-        audio.play().then(() => set({ isPlaying: true })).catch(() => undefined);
+        currentAutoplay = true;
+        set({ buffering: true });
+        audio.play().catch(() => recoverPlayback?.("error"));
       } else if (!playing && !audio.paused) {
+        currentAutoplay = false;
         audio.pause();
-        set({ isPlaying: false });
+        set({ isPlaying: false, buffering: false });
       }
       if (Number.isFinite(position) && Math.abs(audio.currentTime - position) > 2.5) {
         audio.currentTime = Math.max(0, position);

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import {
   ChevronDown,
+  Loader2,
   Lock,
   Pause,
   Play,
@@ -18,7 +19,7 @@ import { cn, formatDuration, gradientFromString } from "@/lib/utils";
 import { LikeButton } from "@/components/music/LikeButton";
 
 export function MobileNowPlaying() {
-  const { queue, index, isPlaying, progress, duration, shuffle, repeat, context, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setLyricsOpen } =
+  const { queue, index, isPlaying, buffering, progress, duration, shuffle, repeat, context, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setLyricsOpen } =
     usePlayerStore();
   const open = useUiStore((state) => state.mobilePlayerOpen);
   const setOpen = useUiStore((state) => state.setMobilePlayerOpen);
@@ -94,8 +95,8 @@ export function MobileNowPlaying() {
               step={0.1}
               value={Math.min(progress, duration || 1)}
               onChange={(event) => seek(Number(event.target.value))}
-              disabled={listenOnly}
-              className={cn("musicly-range w-full", listenOnly && "cursor-not-allowed opacity-40")}
+              disabled={listenOnly || buffering}
+              className={cn("musicly-range w-full", (listenOnly || buffering) && "cursor-not-allowed opacity-40")}
               style={{ ["--range-progress" as string]: `${pct}%` }}
               aria-label="Seek"
             />
@@ -122,8 +123,15 @@ export function MobileNowPlaying() {
               disabled={listenOnly}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-black shadow-xl disabled:opacity-40"
               aria-label={isPlaying ? "Pause" : "Play"}
+              aria-busy={buffering}
             >
-              {isPlaying ? <Pause className="h-7 w-7 fill-current" /> : <Play className="ml-1 h-7 w-7 fill-current" />}
+              {buffering && !isPlaying ? (
+                <Loader2 className="h-7 w-7 animate-spin" />
+              ) : isPlaying ? (
+                <Pause className="h-7 w-7 fill-current" />
+              ) : (
+                <Play className="ml-1 h-7 w-7 fill-current" />
+              )}
             </button>
             <button onClick={() => next()} disabled={listenOnly} className="disabled:opacity-30" aria-label="Next">
               <SkipForward className="h-8 w-8 fill-current" />

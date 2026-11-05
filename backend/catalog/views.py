@@ -14,6 +14,7 @@ from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractHour, TruncDate
 from django.http import FileResponse, Http404, HttpResponseRedirect, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import content_disposition_header
 from rest_framework import status
@@ -642,11 +643,14 @@ class TrackStreamView(APIView):
     authentication_classes = []
 
     def _remote_stream(self, track: Track, request):
-        response = streaming.stream_response(track, request)
+        force = str(request.query_params.get("refresh", "")).lower() in {"1", "true", "yes"}
+        response = streaming.stream_response(track, request, force=force)
         if response is not None:
             return response
         logger.info("Falling back to Deezer preview for track %s", track.deezer_id)
-        return HttpResponseRedirect(f"/tracks/{track.pk}/preview/")
+        redirect = HttpResponseRedirect(reverse("track-preview", kwargs={"track_id": track.pk}))
+        redirect["Cache-Control"] = "no-store"
+        return redirect
 
     def get(self, request, track_id):
         track = _stream_track(track_id)
@@ -768,25 +772,41 @@ def _preview_expired(url: str) -> bool:
 
 
 class TrackPreviewView(APIView):
-    """Redirect to a fresh Deezer preview for a cached track.
+    """Redirect to a fresh Deezer preview for a track.
 
     Likes, playlists and history store Track rows with the preview URL that
     existed when the song was saved. Deezer signs those URLs with an expiry, so
     replaying a saved row can fail hours later. This endpoint refreshes the URL
-    on demand instead of proxying the audio bytes themselves.
+    on demand instead of proxying the audio bytes themselves. It accepts either
+    a local primary key or a ``dz-<deezer id>`` identifier so catalog tracks
+    that have not been persisted yet can use the same endpoint.
     """
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def get(self, request, track_id):
+        raw_id = str(track_id)
         track = None
-        if str(track_id).isdigit():
-            track = Track.objects.filter(pk=track_id).first()
+        deezer_id = None
+        if raw_id.startswith("dz-"):
+            try:
+                deezer_id = int(raw_id[3:])
+            except ValueError:
+                raise Http404("Track not found.")
+            track = Track.objects.filter(deezer_id=deezer_id).first()
+        elif raw_id.isdigit():
+            track = Track.objects.filter(pk=raw_id).first()
             if track is None:
-                track = Track.objects.filter(deezer_id=track_id).first()
-        if track is None:
+                track = Track.objects.filter(deezer_id=raw_id).first()
+        if track is None and deezer_id is None:
             raise Http404("Track not found.")
+        if track is None:
+            try:
+                payload = deezer.get_track(deezer_id, refresh=True)
+            except deezer.DeezerError:
+                raise Http404("Preview is not available for this track.")
+            track = track_from_payload(payload)
 
         preview = track.preview_url
         if not preview or _preview_expired(preview):
