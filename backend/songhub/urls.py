@@ -29,6 +29,11 @@ urlpatterns = [
         name="songhub-playback",
     ),
     path(
+        "rooms/<str:code>/ready/",
+        views.RoomReadyView.as_view(),
+        name="songhub-ready",
+    ),
+    path(
         "rooms/<str:code>/requests/",
         views.RoomRequestView.as_view(),
         name="songhub-requests",

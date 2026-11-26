@@ -346,6 +346,10 @@ export interface SongHubRoomSummary {
 export interface SongHubRoom extends SongHubRoomSummary {
   position_seconds: number;
   position_updated_at: string | null;
+  starts_at: string | null;
+  ready_deadline: string | null;
+  ready_count: number;
+  ready_total: number;
 }
 
 export interface SongHubMember {

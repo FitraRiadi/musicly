@@ -382,6 +382,10 @@ export const api = {
       method: "POST",
       body: payload,
     }),
+  songHubReady: (code: string) =>
+    request<SongHubState>(`/songhub/rooms/${encodeURIComponent(code)}/ready/`, {
+      method: "POST",
+    }),
   songHubRequest: (code: string, track: Track, note = "") =>
     request<SongHubRequest>(`/songhub/rooms/${encodeURIComponent(code)}/requests/`, {
       method: "POST",

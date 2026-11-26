@@ -186,6 +186,8 @@ function bindAudioElement(element: HTMLAudioElement) {
     // A paused element is ready but not autoplaying (for example a paused
     // Song Hub sync). Keep the spinner for autoplay until `playing` fires.
     if (element.paused) usePlayerStore.setState({ buffering: false });
+    // Tell a waiting Song Hub that this listener has buffered the track.
+    songHubGate.onPlaybackReady?.();
   });
   element.addEventListener("loadedmetadata", () => {
     if (element !== audio) return;
@@ -318,6 +320,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     const requestId = ++startRequest;
     const remoteSource = sourceFor(track, options);
     const isRecovery = Boolean(options.attempt);
+    // In a Song Hub the room decides when the first beat lands, so the host
+    // loads the track and lets the shared countdown start it. A track pushed
+    // in by the room's own sync keeps the autoplay it was given.
+    if (
+      songHubGate.active &&
+      songHubGate.isHost &&
+      !isRecovery &&
+      suppressBroadcastFor !== track.id
+    ) {
+      autoplay = false;
+    }
 
     recoveryAttempt = options.attempt ?? 0;
     currentAutoplay = autoplay;

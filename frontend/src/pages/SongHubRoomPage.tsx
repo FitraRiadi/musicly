@@ -115,6 +115,7 @@ export function SongHubRoomPage() {
   const remoteAudioBlocked = useSongHubStore((state) => state.remoteAudioBlocked);
   const speaking = useSongHubStore((state) => state.speaking);
   const joining = useSongHubStore((state) => state.joining);
+  const starting = useSongHubStore((state) => state.starting);
   const error = useSongHubStore((state) => state.error);
   const joinRoom = useSongHubStore((state) => state.joinRoom);
   const loadLobby = useSongHubStore((state) => state.loadLobby);
@@ -404,7 +405,7 @@ export function SongHubRoomPage() {
                     step={0.5}
                     value={Math.min(progress, duration || 1)}
                     onChange={(event) => seek(Number(event.target.value))}
-                    disabled={!isHost || !track}
+                    disabled={!isHost || !track || starting !== null}
                     className="musicly-range w-full disabled:cursor-not-allowed disabled:opacity-40"
                     style={{
                       ["--range-progress" as string]: `${
@@ -419,9 +420,17 @@ export function SongHubRoomPage() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {starting && (
+                    <span className="flex w-full items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+                      {starting.phase === "waiting"
+                        ? `Waiting for listeners — ${starting.ready}/${starting.total} ready`
+                        : "Starting together…"}
+                    </span>
+                  )}
                   {isHost ? (
                     <>
-                      <Button size="icon" onClick={togglePlay} disabled={!track} aria-label={isPlaying ? "Pause" : "Play"}>
+                      <Button size="icon" onClick={togglePlay} disabled={!track || starting !== null} aria-label={isPlaying ? "Pause" : "Play"}>
                         {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
                       </Button>
                       <Button

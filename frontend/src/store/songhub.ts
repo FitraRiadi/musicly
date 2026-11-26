@@ -40,6 +40,8 @@ interface SongHubStore {
   voiceVolume: number;
   remoteAudioBlocked: boolean;
   speaking: Record<number, boolean>;
+  /** Set while the room gathers everyone before a shared start. */
+  starting: { phase: "waiting" | "countdown"; ready: number; total: number } | null;
 
   hydrate: () => Promise<void>;
   loadLobby: () => Promise<void>;
@@ -103,6 +105,59 @@ const currentUserIds = new Map<string, number>();
 function setMyUserId(code: string, id: number | null) {
   if (id === null) currentUserIds.delete(code);
   else currentUserIds.set(code, id);
+}
+
+// Offset between the room's server clock and this device, learned from every
+// state poll so a scheduled start lands on the same beat everywhere.
+let clockOffset = 0;
+let startTimer: number | undefined;
+let startKey = "";
+let readyKey = "";
+
+function clearRoomStart() {
+  if (startTimer !== undefined) {
+    window.clearTimeout(startTimer);
+    startTimer = undefined;
+  }
+  startKey = "";
+}
+
+function scheduleRoomStart(code: string, track: Track, startAt: number, position: number) {
+  const key = `${code}:${track.id}:${startAt}`;
+  if (startKey === key) return;
+  clearRoomStart();
+  startKey = key;
+  startTimer = window.setTimeout(
+    () => {
+      startTimer = undefined;
+      const room = useSongHubStore.getState().room;
+      if (!room || room.code !== code || room.current_track?.id !== track.id) return;
+      usePlayerStore.getState().syncFromRoom(track, true, position);
+      useSongHubStore.setState({ starting: null });
+    },
+    Math.max(0, startAt - (Date.now() + clockOffset)),
+  );
+}
+
+/** Report this listener as buffered so the room can start the shared countdown. */
+function markReadyIfBuffered() {
+  const room = useSongHubStore.getState().room;
+  if (!room?.ready_deadline || !room.current_track) return;
+  const key = `${room.code}:${room.current_track.id}:${room.ready_deadline}`;
+  if (readyKey === key) return;
+  const player = usePlayerStore.getState();
+  const current = player.queue[player.index];
+  if (current?.id !== room.current_track.id || player.buffering) return;
+  readyKey = key;
+  void api
+    .songHubReady(room.code)
+    .then((next) => {
+      if (useSongHubStore.getState().room?.code !== room.code) return;
+      useSongHubStore.getState().applyState(next);
+    })
+    .catch(() => {
+      if (readyKey === key) readyKey = "";
+    });
 }
 
 function ensureAudioContext() {
@@ -414,6 +469,8 @@ function teardownRoom() {
   refreshing = false;
   signalPolling = false;
   seenSignals.clear();
+  clearRoomStart();
+  readyKey = "";
   const code = useSongHubStore.getState().room?.code;
   if (code) setMyUserId(code, null);
   resetSongHubGate();
@@ -429,6 +486,7 @@ function teardownRoom() {
     voiceError: null,
     remoteAudioBlocked: false,
     speaking: {},
+    starting: null,
     pendingRequestTrack: null,
   });
 }
@@ -448,6 +506,7 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
       toast("Only the host controls room playback. Request a song instead.", "default");
     };
     songHubGate.onTrackRequest = (track) => get().requestTrackSelection(track);
+    songHubGate.onPlaybackReady = () => markReadyIfBuffered();
     songHubGate.onHostTrackStarted = (track) => {
       const activeCode = get().room?.code;
       if (!activeCode) return;
@@ -473,6 +532,8 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
         .catch((error: any) => {
           optimisticUntil = 0;
           toast(error?.message || "Could not sync your song to the room.", "error");
+          // The room never got the start, so play locally rather than sit silent.
+          usePlayerStore.getState().syncFromRoom(track, true, 0);
         });
     };
     songHubGate.onHostPlaybackChanged = (isPlaying, position) => {
@@ -584,6 +645,7 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
     voiceVolume: INITIAL_VOLUME,
     remoteAudioBlocked: false,
     speaking: {},
+    starting: null,
 
     hydrate: async () => {
       if (get().room || hydratePromise) return hydratePromise ?? Promise.resolve();
@@ -704,11 +766,19 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
       songHubGate.roomName = data.room.name;
 
       let room = data.room;
+      const serverNow = new Date(data.server_time).getTime();
+      clockOffset = serverNow - Date.now();
+      const readyAt = room.ready_deadline ? new Date(room.ready_deadline).getTime() : 0;
+      const startAt = room.starts_at ? new Date(room.starts_at).getTime() : 0;
+      const waiting = Boolean(room.current_track && readyAt > serverNow);
+      const countdown = Boolean(room.current_track && startAt > serverNow);
       if (
         data.me?.role === "host" &&
         !options.fromHost &&
         Date.now() < optimisticUntil &&
-        previous.room
+        previous.room &&
+        !waiting &&
+        !countdown
       ) {
         room = {
           ...room,
@@ -744,27 +814,51 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
         requests: data.requests,
         messages: data.messages,
         reactions: data.reactions,
+        starting: waiting
+          ? { phase: "waiting", ready: data.room.ready_count, total: data.room.ready_total }
+          : countdown
+            ? { phase: "countdown", ready: data.room.ready_total, total: data.room.ready_total }
+            : null,
       });
 
-      if (room.current_track) {
-        const player = usePlayerStore.getState();
+      if (!room.current_track) {
+        clearRoomStart();
+        return;
+      }
+
+      const player = usePlayerStore.getState();
+      if (waiting || countdown) {
+        // Everybody loads the track paused, then the room starts it on one beat.
+        const holdPosition = Math.max(0, room.position_seconds);
         const current = player.queue[player.index];
-        const base = new Date(room.position_updated_at || data.server_time).getTime();
-        const serverNow = new Date(data.server_time).getTime();
-        const elapsed = room.is_playing ? Math.max(0, (serverNow - base) / 1000) : 0;
-        const position = Math.min(
-          room.current_track.duration || 0,
-          Math.max(0, room.position_seconds + elapsed),
-        );
-        const drift = Math.abs(player.progress - position);
-        if (
-          !current ||
-          current.id !== room.current_track.id ||
-          player.isPlaying !== room.is_playing ||
-          (room.is_playing && drift > 0.6)
-        ) {
-          player.syncFromRoom(room.current_track, room.is_playing, position);
+        if (current?.id !== room.current_track.id || player.isPlaying) {
+          player.syncFromRoom(room.current_track, false, holdPosition);
         }
+        if (countdown) {
+          scheduleRoomStart(roomCode, room.current_track, startAt, holdPosition);
+        } else {
+          clearRoomStart();
+        }
+        markReadyIfBuffered();
+        return;
+      }
+
+      clearRoomStart();
+      const current = player.queue[player.index];
+      const base = new Date(room.position_updated_at || data.server_time).getTime();
+      const elapsed = room.is_playing ? Math.max(0, (serverNow - base) / 1000) : 0;
+      const position = Math.min(
+        room.current_track.duration || 0,
+        Math.max(0, room.position_seconds + elapsed),
+      );
+      const drift = Math.abs(player.progress - position);
+      if (
+        !current ||
+        current.id !== room.current_track.id ||
+        player.isPlaying !== room.is_playing ||
+        (room.is_playing && drift > 0.6)
+      ) {
+        player.syncFromRoom(room.current_track, room.is_playing, position);
       }
     },
 
@@ -820,6 +914,7 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
         voiceError: null,
         remoteAudioBlocked: false,
         speaking: {},
+        starting: null,
       });
     },
 

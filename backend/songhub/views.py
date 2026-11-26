@@ -169,6 +169,52 @@ def _state(room: SongHubRoom, request, membership=None, status_code=status.HTTP_
     )
 
 
+# How long listeners get to buffer before the room starts on its own, and the
+# countdown between "everyone is ready" and the first shared beat.
+READY_TIMEOUT_SECONDS = 8
+START_DELAY_SECONDS = 2.4
+
+
+def _begin_waiting(room: SongHubRoom) -> None:
+    """Hold the first beat until every listener has buffered the track."""
+    room.memberships.filter(left_at__isnull=True).update(ready_at=None)
+    room.ready_deadline = None
+    room.starts_at = None
+    if len(_active_memberships(room)) <= 1:
+        # Nobody else to wait for, so start without a countdown.
+        room.is_playing = True
+        room.starts_at = timezone.now()
+        return
+    room.is_playing = False
+    room.ready_deadline = timezone.now() + timedelta(seconds=READY_TIMEOUT_SECONDS)
+
+
+def _advance_ready(room: SongHubRoom) -> None:
+    """Start the countdown once every listener is ready, or the grace expires."""
+    if not room.ready_deadline:
+        return
+    members = _active_memberships(room)
+    now = timezone.now()
+    everyone_ready = bool(members) and all(member.ready_at for member in members)
+    if not everyone_ready and now < room.ready_deadline:
+        return
+    room.ready_deadline = None
+    room.starts_at = now + timedelta(seconds=START_DELAY_SECONDS)
+    room.is_playing = True
+    # Clients derive the live position from this anchor, so a listener that
+    # learns about the start late still lands on the same beat.
+    room.position_updated_at = room.starts_at
+    room.save(
+        update_fields=[
+            "ready_deadline",
+            "starts_at",
+            "is_playing",
+            "position_updated_at",
+            "updated_at",
+        ]
+    )
+
+
 def _resolve_track(data: dict) -> Track | None:
     payload = data.get("track")
     if isinstance(payload, dict):
@@ -405,6 +451,8 @@ class RoomStateView(APIView):
             )
         membership.last_seen = timezone.now()
         membership.save(update_fields=["last_seen"])
+        # Any poll can free the room from a wait whose grace has expired.
+        _advance_ready(room)
         return _state(room, request, membership)
 
 
@@ -545,6 +593,7 @@ class RoomPlaybackView(APIView):
 
         track = _resolve_track(request.data)
         track_changed = bool(track and track.id != room.current_track_id)
+        was_playing = room.is_playing
         if track is not None:
             room.current_track = track
             if track_changed:
@@ -565,16 +614,53 @@ class RoomPlaybackView(APIView):
                 {"detail": "Send a track or playback state."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        room.position_updated_at = timezone.now()
+        now = timezone.now()
+        fresh_start = room.is_playing and (track_changed or not was_playing) and not room.starts_at
+        if fresh_start:
+            _begin_waiting(room)
+            room.position_updated_at = now
+        elif not room.is_playing:
+            room.ready_deadline = None
+            room.starts_at = None
+            room.position_updated_at = now
+        elif room.starts_at and room.starts_at > now:
+            # A countdown is already running; keep its anchor so the beat holds.
+            room.ready_deadline = None
+        else:
+            room.ready_deadline = None
+            room.starts_at = None
+            room.position_updated_at = now
         room.save(
             update_fields=[
                 "current_track",
                 "is_playing",
                 "position_seconds",
                 "position_updated_at",
+                "ready_deadline",
+                "starts_at",
                 "updated_at",
             ]
         )
+        return _state(room, request, membership)
+
+
+class RoomReadyView(APIView):
+    """A listener reports that its audio is buffered for the shared start."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, code):
+        room = _get_room(code)
+        membership = _require_member(room, request.user)
+        if not membership:
+            return Response(
+                {"detail": "Join this Song Hub to listen along."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if membership.ready_at is None and room.ready_deadline:
+            membership.ready_at = timezone.now()
+            membership.save(update_fields=["ready_at"])
+        _advance_ready(room)
         return _state(room, request, membership)
 
 

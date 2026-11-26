@@ -41,6 +41,10 @@ class SongHubRoom(models.Model):
     is_playing = models.BooleanField(default=False)
     position_seconds = models.FloatField(default=0)
     position_updated_at = models.DateTimeField(null=True, blank=True)
+    # Set while the room waits for every listener to buffer, then the moment
+    # playback is scheduled to begin for everyone at once.
+    ready_deadline = models.DateTimeField(null=True, blank=True)
+    starts_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     max_members = models.PositiveSmallIntegerField(default=10)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -86,6 +90,8 @@ class SongHubMembership(models.Model):
     last_seen = models.DateTimeField(default=timezone.now)
     left_at = models.DateTimeField(null=True, blank=True)
     mic_on = models.BooleanField(default=False)
+    # Set when the listener's audio has buffered enough for the scheduled start.
+    ready_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["joined_at", "id"]

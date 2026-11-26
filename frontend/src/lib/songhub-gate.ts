@@ -18,6 +18,7 @@ export interface SongHubGate {
   onTrackRequest: ((track: Track) => void) | null;
   onHostTrackStarted: ((track: Track) => void) | null;
   onHostPlaybackChanged: ((isPlaying: boolean, position: number) => void) | null;
+  onPlaybackReady: (() => void) | null;
 }
 
 export const songHubGate: SongHubGate = {
@@ -30,6 +31,7 @@ export const songHubGate: SongHubGate = {
   onTrackRequest: null,
   onHostTrackStarted: null,
   onHostPlaybackChanged: null,
+  onPlaybackReady: null,
 };
 
 export function resetSongHubGate() {
@@ -42,4 +44,5 @@ export function resetSongHubGate() {
   songHubGate.onTrackRequest = null;
   songHubGate.onHostTrackStarted = null;
   songHubGate.onHostPlaybackChanged = null;
+  songHubGate.onPlaybackReady = null;
 }

@@ -116,6 +116,10 @@ def serialize_room_state(room: SongHubRoom, request, membership: SongHubMembersh
             "is_playing": room.is_playing,
             "position_seconds": room.position_seconds,
             "position_updated_at": room.position_updated_at,
+            "starts_at": room.starts_at,
+            "ready_deadline": room.ready_deadline,
+            "ready_count": sum(1 for member in members if member.ready_at),
+            "ready_total": len(members),
         },
         "members": [serialize_member(member, request) for member in members],
         "me": {
