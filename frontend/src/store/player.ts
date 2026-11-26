@@ -70,6 +70,36 @@ const initialVolume = Number.isFinite(storedVolume) ? Math.min(1, Math.max(0, st
 if (audio) audio.volume = initialVolume;
 if (standby) standby.volume = initialVolume;
 
+/**
+ * Resolve a track while the pointer rests on it, so the click that follows
+ * starts from cache instead of a cold YouTube search. The debounce means a
+ * sweep across a list only warms the row the pointer actually stops on.
+ */
+let warmTimer: ReturnType<typeof setTimeout> | null = null;
+let warmPending: Track | null = null;
+const warmedStreams = new Set<string>();
+
+export function warmTrackStream(track: Track) {
+  if (!track.has_full_audio || !track.stream_url) return;
+  warmPending = track;
+  if (warmTimer) clearTimeout(warmTimer);
+  warmTimer = setTimeout(() => {
+    warmTimer = null;
+    const target = warmPending;
+    warmPending = null;
+    if (!target || !target.stream_url || warmedStreams.has(target.id)) return;
+    warmedStreams.add(target.id);
+    fetch(apiUrl(target.stream_url), { headers: { Range: "bytes=0-0" } })
+      .then((response) => {
+        response.body?.cancel().catch(() => undefined);
+        // A redirect means the scraper gave up and the player would fall back
+        // to the preview, so let the next hover try again.
+        if (!response.ok || response.redirected) warmedStreams.delete(target.id);
+      })
+      .catch(() => warmedStreams.delete(target.id));
+  }, 300);
+}
+
 function reportHistory(track: Track, context: string) {
   if (!getAccessToken()) return;
   api.addHistory(track.id, context).catch(() => undefined);
@@ -780,6 +810,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const current = state.queue[state.index];
       if (!current || current.id !== track.id) {
         suppressBroadcastFor = track.id;
+        audio.playbackRate = 1;
         set({ queue: [track], index: 0, context: "Song Hub", isPlaying: playing });
         startTrack(track, playing, Math.max(0, position || 0));
         return;
@@ -793,9 +824,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         audio.pause();
         set({ isPlaying: false, buffering: false });
       }
-      if (Number.isFinite(position) && Math.abs(audio.currentTime - position) > 2.5) {
+      const drift = Number.isFinite(position) ? audio.currentTime - position : 0;
+      if (Math.abs(drift) > 2.5) {
+        audio.playbackRate = 1;
         audio.currentTime = Math.max(0, position);
         set({ progress: Math.max(0, position) });
+      } else if (playing && Math.abs(drift) > 0.6) {
+        // Small drift is corrected by a brief rate nudge. A seek would be
+        // audible, and everyone is supposed to be hearing the same beat.
+        audio.playbackRate = drift > 0 ? 0.96 : 1.04;
+      } else if (audio.playbackRate !== 1) {
+        audio.playbackRate = 1;
       }
     },
   };

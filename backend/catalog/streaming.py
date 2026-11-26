@@ -37,8 +37,15 @@ SEARCH_BUDGET = 60
 STREAM_TIMEOUT = (5, 90)
 CHUNK = 64 * 1024
 RESOLVE_TTL = 60 * 60 * 24 * 30
-RESOLVE_CACHE_VERSION = 3
+RESOLVE_CACHE_VERSION = 4
 NEGATIVE_TTL = 20
+# Rank several candidates instead of trusting the first YouTube hit. The first
+# result for "artist title audio" is regularly a cover, a live take, or an
+# unrelated song with the same title.
+SEARCH_CANDIDATES = 5
+# Only a match this good is cached for a month. A weak match stays uncached so
+# the next play searches again instead of replaying the wrong upload forever.
+MIN_CONFIDENT_SCORE = 0.62
 
 _TOKEN_RE = re.compile(r"[^a-z0-9]+")
 _BRACKET_RE = re.compile(r"\([^)]*\)|\[[^\]]*\]")
@@ -82,6 +89,38 @@ def _duration_mismatch(track, result: dict) -> bool:
     return abs(duration - candidate_duration) > _duration_tolerance(track)
 
 
+_OFFICIAL_MARKERS = (
+    "official audio",
+    "official video",
+    "official music video",
+    "official lyric video",
+    "lyric video",
+    "visualizer",
+)
+# Other versions of the same song. Matched per word so "discover" is not read
+# as "cover".
+_VARIANT_MARKERS = (
+    "cover",
+    "instrumental",
+    "karaoke",
+    "reaction",
+    "live",
+    "nightcore",
+    "sped up",
+    "slowed",
+    "reverb",
+    "8d audio",
+    "tribute",
+    "mashup",
+    "remix",
+    "acoustic",
+)
+
+
+def _has_marker(text: str, marker: str) -> bool:
+    return re.search(rf"\b{re.escape(marker)}\b", text) is not None
+
+
 def _candidate_score(track, result: dict) -> float:
     """Rank a YouTube search result against the Deezer track metadata."""
     title = _normalize(track.title)
@@ -94,12 +133,18 @@ def _candidate_score(track, result: dict) -> float:
     if title and title in candidate_title:
         title_score = max(title_score, 0.92)
 
-    if artist and artist in channel:
+    # The channel is the strongest signal that this is the real artist. Official
+    # audio normally lives on the artist channel or on "<Artist> - Topic".
+    if not artist:
+        artist_score = 0.5
+    elif channel == artist or channel == f"{artist} topic" or channel.startswith(f"{artist} "):
         artist_score = 1.0
-    elif artist and artist in candidate_title:
-        artist_score = 0.85
+    elif artist in channel:
+        artist_score = 0.8
+    elif artist in candidate_title:
+        artist_score = 0.35
     else:
-        artist_score = max(_ratio(artist, channel), _ratio(artist, candidate_title))
+        artist_score = max(_ratio(artist, channel), _ratio(artist, candidate_title)) * 0.5
 
     duration = int(track.duration or 0)
     candidate_duration = int(result.get("duration") or 0)
@@ -116,12 +161,16 @@ def _candidate_score(track, result: dict) -> float:
     else:
         duration_score = 0.5
 
-    bonus = 0.05 if "official audio" in raw_title or "official video" in raw_title else 0.0
-    if channel == artist or channel.endswith(" topic"):
-        bonus += 0.03
+    bonus = 0.0
+    if any(marker in raw_title for marker in _OFFICIAL_MARKERS):
+        bonus += 0.08
+    if channel.endswith(" topic"):
+        bonus += 0.10
+    if result.get("channelVerified"):
+        bonus += 0.04
 
-    # Prefer the original studio recording. Clean/radio versions are common on
-    # YouTube and silently remove profanity, which makes the song feel chopped.
+    # Prefer the original studio recording. Clean/radio versions silently
+    # remove profanity, and covers impersonate the real track outright.
     penalty = 0.0
     clean_markers = ("(clean)", "[clean]", "clean version", "clean edit", "clean audio", "- clean")
     if "clean" not in title and any(marker in raw_title for marker in clean_markers):
@@ -130,9 +179,9 @@ def _candidate_score(track, result: dict) -> float:
         penalty += 0.4
     if "kidz bop" not in title and "kidz bop" in raw_title:
         penalty += 0.4
-    for marker in ("live", "cover", "instrumental", "karaoke", "reaction", "sped up", "nightcore", "slowed"):
-        if re.search(rf"\b{re.escape(marker)}\b", raw_title) and marker not in title:
-            penalty += 0.15
+    for marker in _VARIANT_MARKERS:
+        if marker not in title and _has_marker(raw_title, marker):
+            penalty += 0.3
 
     return 0.5 * title_score + 0.3 * artist_score + 0.2 * duration_score + bonus - penalty - duration_penalty
 
@@ -148,7 +197,7 @@ def _search_results(track, limit: int, deadline: float) -> list[dict]:
     try:
         response = SESSION.post(
             f"{_base()}/api/search",
-            json={"query": query, "limit": limit},
+            json={"query": query, "limit": limit, "resolve": False},
             timeout=(min(5.0, remaining), remaining),
         )
         response.raise_for_status()
@@ -162,11 +211,29 @@ def _search_results(track, limit: int, deadline: float) -> list[dict]:
     return results
 
 
-def _search_video_id(track) -> str:
-    # One scraper search per uncached play; the audio query bias fixes the match.
+def _warm_stream(video_id: str) -> None:
+    """Resolve the chosen video once so the stream request has no cold start."""
+    try:
+        SESSION.post(
+            f"{_base()}/api/search",
+            json={"query": f"https://www.youtube.com/watch?v={video_id}", "resolve": True},
+            timeout=(5, 30),
+        ).raise_for_status()
+    except requests.RequestException:
+        # /api/stream resolves lazily, so a failed warm-up only costs latency.
+        pass
+
+
+def _search_video_id(track) -> tuple[str, bool]:
+    """Pick the candidate that looks most like the official track.
+
+    Returns the video id and whether the match is confident enough to cache.
+    """
     deadline = time.monotonic() + SEARCH_BUDGET
-    best = _search_results(track, 1, deadline)[0]
+    results = _search_results(track, SEARCH_CANDIDATES, deadline)
+    best = max(results, key=lambda result: _candidate_score(track, result))
     score = _candidate_score(track, best)
+    confident = score >= MIN_CONFIDENT_SCORE and not _duration_mismatch(track, best)
 
     if score < 0.35:
         logger.warning(
@@ -176,16 +243,15 @@ def _search_video_id(track) -> str:
             score,
             best.get("title"),
         )
-    elif _duration_mismatch(track, best):
+    elif not confident:
         logger.info(
-            "Duration differs for %s - %s: track=%ss video=%ss (%s)",
+            "Not caching uncertain match for %s - %s: %.2f (%s)",
             track.artist_name,
             track.title,
-            track.duration,
-            best.get("duration"),
+            score,
             best.get("title"),
         )
-    return str(best["id"])
+    return str(best["id"]), confident
 
 
 def resolve_video_id(track, *, force: bool = False) -> str:
@@ -204,13 +270,18 @@ def resolve_video_id(track, *, force: bool = False) -> str:
             raise StreamUnavailable("No YouTube match is cached for this track.")
 
     try:
-        video_id = _search_video_id(track)
+        video_id, confident = _search_video_id(track)
     except StreamUnavailable:
         cache.set(miss_key, True, NEGATIVE_TTL)
         raise
 
-    cache.set(key, video_id, RESOLVE_TTL)
+    if confident:
+        cache.set(key, video_id, RESOLVE_TTL)
+    else:
+        # Never pin an uncertain match; the next play must search again.
+        cache.delete(key)
     cache.delete(miss_key)
+    _warm_stream(video_id)
     return video_id
 
 

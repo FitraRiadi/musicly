@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -40,6 +40,7 @@ import {
 import { Input, Label } from "@/components/ui/input";
 import { SongPickerDialog } from "@/components/songhub/SongPickerDialog";
 import { InviteFriendsDialog } from "@/components/songhub/InviteFriendsDialog";
+import { activeLineIndex, parseLrc, useLyrics } from "@/hooks/useLyrics";
 import { SONGHUB_REACTIONS, SONGHUB_STICKERS, reactionEmoji } from "@/lib/songhub";
 import { cn, formatDuration, initials, timeAgo } from "@/lib/utils";
 import { usePlayerStore } from "@/store/player";
@@ -136,6 +137,7 @@ export function SongHubRoomPage() {
   const next = usePlayerStore((state) => state.next);
   const prev = usePlayerStore((state) => state.prev);
   const seek = usePlayerStore((state) => state.seek);
+  const toggleLyrics = usePlayerStore((state) => state.toggleLyrics);
 
   const toast = useUiStore((state) => state.toast);
   const [password, setPassword] = useState("");
@@ -158,6 +160,11 @@ export function SongHubRoomPage() {
   const isHost = me?.role === "host";
   const myUserId = members.find((member) => member.id === me?.membership_id)?.user.id;
   const track = active ? room?.current_track : null;
+  // Everyone in the room shares the host's position, so the same lyric line is
+  // active on every screen.
+  const { data: lyrics } = useLyrics(track?.id);
+  const lyricLines = useMemo(() => parseLrc(lyrics?.synced || ""), [lyrics?.synced]);
+  const activeLyric = activeLineIndex(lyricLines, progress);
   const pendingRequests = requests.filter((row) => row.status === "pending");
   const recentRequests = requests.filter((row) => row.status !== "pending").slice(0, 5);
 
@@ -369,6 +376,22 @@ export function SongHubRoomPage() {
                 <p className="mt-1 truncate text-sm text-white/50">
                   {track ? `${track.artist.name} · ${track.album.title}` : "The host will pick something soon."}
                 </p>
+
+                {lyricLines.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleLyrics}
+                    aria-label="Open shared lyrics"
+                    className="mt-3 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-white/25 hover:bg-black/30"
+                  >
+                    <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
+                      Shared lyrics
+                    </span>
+                    <span className="mt-0.5 block truncate text-sm font-semibold text-white/85">
+                      {activeLyric >= 0 ? lyricLines[activeLyric].text : lyricLines[0].text}
+                    </span>
+                  </button>
+                )}
 
                 <div className="mt-4 flex items-center gap-2">
                   <span className="w-9 text-right text-[11px] tabular-nums text-white/40">

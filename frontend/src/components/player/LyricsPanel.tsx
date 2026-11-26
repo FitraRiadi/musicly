@@ -1,37 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { GripHorizontal, Music2, Quote, X } from "lucide-react";
-import { api } from "@/lib/api";
-import type { Lyrics } from "@/lib/types";
 import { useDraggablePanel } from "@/hooks/useDraggablePanel";
+import { activeLineIndex, parseLrc, useLyrics } from "@/hooks/useLyrics";
 import { usePlayerStore } from "@/store/player";
 import { cn } from "@/lib/utils";
-
-interface LyricLine {
-  time: number;
-  text: string;
-}
-
-/** Keep already-opened lyrics in memory so toggling the panel is instant. */
-const lyricsCache = new Map<string, Lyrics>();
-
-/** Parse LRC timestamps, including lines with multiple timestamps. */
-function parseLrc(value: string): LyricLine[] {
-  if (!value) return [];
-  const lines: LyricLine[] = [];
-  for (const raw of value.split(/\r?\n/)) {
-    const stamps = [...raw.matchAll(/\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g)];
-    if (!stamps.length) continue;
-    const text = raw.replace(/\[[^\]]+\]/g, "").trim();
-    if (!text) continue;
-    for (const stamp of stamps) {
-      const minutes = Number(stamp[1]);
-      const seconds = Number(stamp[2]);
-      const fraction = stamp[3] ? Number(`0.${stamp[3].padEnd(3, "0").slice(0, 3)}`) : 0;
-      lines.push({ time: minutes * 60 + seconds + fraction, text });
-    }
-  }
-  return lines.sort((a, b) => a.time - b.time);
-}
 
 function LoadingLines() {
   return (
@@ -50,46 +22,12 @@ function LoadingLines() {
 export function LyricsPanel() {
   const { queue, index, progress, isPlaying, lyricsOpen, setLyricsOpen } = usePlayerStore();
   const track = queue[index];
-  const [data, setData] = useState<Lyrics | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { data, loading, error } = useLyrics(lyricsOpen ? track?.id : undefined);
   const lineRefs = useRef<Array<HTMLParagraphElement | null>>([]);
   const { panelRef, position, dragging, dragHandleProps } = useDraggablePanel(
     "musicly_lyrics_position",
     lyricsOpen && Boolean(track),
   );
-
-  useEffect(() => {
-    if (!lyricsOpen || !track) return;
-    const cached = lyricsCache.get(track.id);
-    if (cached) {
-      setData(cached);
-      setLoading(false);
-      setError("");
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    setData(null);
-    api
-      .lyrics(track.id)
-      .then((result) => {
-        if (!cancelled) {
-          lyricsCache.set(track.id, result);
-          setData(result);
-        }
-      })
-      .catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load lyrics.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [lyricsOpen, track?.id]);
 
   const syncedLines = useMemo(() => parseLrc(data?.synced || ""), [data?.synced]);
   const plainLines = useMemo(
@@ -101,15 +39,7 @@ export function LyricsPanel() {
     [data?.plain],
   );
 
-  const activeIndex = useMemo(() => {
-    if (!syncedLines.length) return -1;
-    let active = -1;
-    for (let position = 0; position < syncedLines.length; position += 1) {
-      if (syncedLines[position].time <= progress + 0.15) active = position;
-      else break;
-    }
-    return active;
-  }, [syncedLines, progress]);
+  const activeIndex = useMemo(() => activeLineIndex(syncedLines, progress), [syncedLines, progress]);
 
   useEffect(() => {
     if (!lyricsOpen || activeIndex < 0) return;

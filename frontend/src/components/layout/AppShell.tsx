@@ -74,6 +74,8 @@ export function AppShell() {
         event.preventDefault();
         document.getElementById("global-search")?.focus();
       } else if (event.code === "Space") {
+        // Tahan spasi tidak boleh memicu toggle berulang.
+        if (event.repeat) return;
         event.preventDefault();
         togglePlay();
       } else if (event.key === "ArrowRight" && event.altKey) {

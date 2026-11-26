@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Clock3,
@@ -26,7 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { usePlayerStore } from "@/store/player";
+import { usePlayerStore, warmTrackStream } from "@/store/player";
 import { useDownloadsStore } from "@/store/downloads";
 import { useLibraryStore } from "@/store/library";
 import { useAuthStore } from "@/store/auth";
@@ -83,6 +84,13 @@ export function TrackList({
   const listenOnly = Boolean(hubRoom && hubMe?.role === "member");
 
   const currentId = queue[index]?.id;
+  const firstTrack = tracks[0];
+
+  // The big Play button on album and playlist pages starts the first track, so
+  // resolve that one as soon as the list is visible.
+  useEffect(() => {
+    if (firstTrack && !listenOnly) warmTrackStream(firstTrack);
+  }, [firstTrack, listenOnly]);
 
   const handlePlay = (track: Track, i: number) => {
     if (listenOnly) {
@@ -171,6 +179,7 @@ export function TrackList({
               onDoubleClick={() =>
                 listenOnly ? requestTrackSelection(track) : playContext(tracks, i, context)
               }
+              onPointerEnter={listenOnly ? undefined : () => warmTrackStream(track)}
               className="group grid grid-cols-[20px_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-white/[0.07] sm:grid-cols-[20px_minmax(0,1.6fr)_minmax(0,1fr)_36px_96px] sm:gap-4"
             >
               <button

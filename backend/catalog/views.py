@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from django.core.files.storage import default_storage
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractHour, TruncDate
@@ -128,7 +129,11 @@ def _friend_ids(user) -> list[int]:
 
 
 def _taste_scores(user):
-    """Blend explicit likes, listening history, follows and saved playlists."""
+    """Blend explicit likes, listening history, follows and saved playlists.
+
+    Recent listens outweigh old ones: taste drifts, and a song played last week
+    says more about what to recommend today than one played three months ago.
+    """
     scores: dict[str, float] = {}
     names: dict[str, str] = {}
 
@@ -142,13 +147,16 @@ def _taste_scores(user):
         if artist_name:
             names[key] = artist_name
 
-    for row in (
-        PlayHistory.objects.filter(user=user)
-        .values("track__artist_id", "track__artist_name")
-        .annotate(plays=Count("id"))
-        .order_by("-plays")[:40]
-    ):
-        add(row["track__artist_id"], row["track__artist_name"], min(row["plays"], 8))
+    now = timezone.now()
+    recent = (
+        PlayHistory.objects.filter(user=user, played_at__gte=now - timedelta(days=90))
+        .values("track__artist_id", "track__artist_name", "played_at")
+        .order_by("-played_at")[:400]
+    )
+    for row in recent:
+        age = (now - row["played_at"]).days
+        weight = 1.0 if age <= 7 else 0.5 if age <= 30 else 0.25
+        add(row["track__artist_id"], row["track__artist_name"], weight)
 
     for row in LikedTrack.objects.filter(user=user).select_related("track")[:80]:
         add(row.track.artist_id, row.track.artist_name, 4)
@@ -178,34 +186,40 @@ def _personal_sections(user, request=None) -> list[dict]:
     heard = played_ids | liked_ids
 
     taste = _taste_scores(user)
-    for artist_key, artist_name, _score in taste[:1]:
+    used_artists = 0
+    for artist_key, artist_name, _score in taste:
+        if used_artists >= 3:
+            break
         if not artist_key.isdigit():
             continue
         try:
             artist = deezer.get_artist(artist_key)
         except deezer.DeezerError:
-            break
+            continue
         items = []
         for track in artist.get("top_tracks", []):
             try:
-                if int(track.get("deezer_id") or track.get("id")) in heard:
-                    continue
+                track_id = int(track.get("deezer_id") or track.get("id"))
             except (TypeError, ValueError):
                 continue
+            if track_id in heard:
+                continue
+            heard.add(track_id)
             items.append(track)
             if len(items) >= 10:
                 break
-        if items:
-            sections.append(
-                {
-                    "id": "taste-artist",
-                    "title": f"Because you like {artist_name}",
-                    "subtitle": "Picked from your listening, likes and saves",
-                    "kind": "tracks",
-                    "items": attach_local_audio(items, user),
-                }
-            )
-        break
+        if not items:
+            continue
+        used_artists += 1
+        sections.append(
+            {
+                "id": f"taste-artist-{artist_key}",
+                "title": f"Because you like {artist_name}",
+                "subtitle": "Picked from your listening, likes and saves",
+                "kind": "tracks",
+                "items": attach_local_audio(items, user),
+            }
+        )
 
     friend_ids = _friend_ids(user)
     if friend_ids:
@@ -284,6 +298,17 @@ def _personal_sections(user, request=None) -> list[dict]:
     return sections
 
 
+def _cached_personal_sections(user, request=None) -> list[dict]:
+    """Cache the Deezer-heavy taste sections; they barely change minute to minute."""
+    key = f"home:personal:v2:{user.id}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    sections = _personal_sections(user, request)
+    cache.set(key, sections, 600)
+    return sections
+
+
 class HomeView(APIView):
     permission_classes = [AllowAny]
 
@@ -309,7 +334,7 @@ class HomeView(APIView):
                     "items": [serialize_track(row.track, user) for row in liked],
                 })
             try:
-                sections.extend(_personal_sections(user, request))
+                sections.extend(_cached_personal_sections(user, request))
             except Exception:
                 logger.exception("Could not build personalised home sections")
 

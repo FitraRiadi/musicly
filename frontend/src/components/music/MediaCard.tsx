@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Pause, Play } from "lucide-react";
 import type { Album, Artist, Genre, Playlist, Track } from "@/lib/types";
 import { api } from "@/lib/api";
-import { usePlayerStore } from "@/store/player";
+import { usePlayerStore, warmTrackStream } from "@/store/player";
 import { useAuthStore } from "@/store/auth";
 import { useUiStore } from "@/store/ui";
 import { cn } from "@/lib/utils";
@@ -121,6 +121,7 @@ export function MediaCard({
   return (
     <Link
       to={meta.href}
+      onPointerEnter={kind === "track" ? () => warmTrackStream(item as Track) : undefined}
       className={cn(
         "group relative flex flex-col gap-3 rounded-xl bg-white/[0.035] p-3 transition-colors duration-200 hover:bg-white/[0.09]",
         className,

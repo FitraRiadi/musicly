@@ -761,7 +761,7 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
           !current ||
           current.id !== room.current_track.id ||
           player.isPlaying !== room.is_playing ||
-          (room.is_playing && drift > 2.5)
+          (room.is_playing && drift > 0.6)
         ) {
           player.syncFromRoom(room.current_track, room.is_playing, position);
         }
