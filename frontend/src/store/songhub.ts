@@ -847,10 +847,19 @@ export const useSongHubStore = create<SongHubStore>((set, get) => {
       const current = player.queue[player.index];
       const base = new Date(room.position_updated_at || data.server_time).getTime();
       const elapsed = room.is_playing ? Math.max(0, (serverNow - base) / 1000) : 0;
-      const position = Math.min(
-        room.current_track.duration || 0,
-        Math.max(0, room.position_seconds + elapsed),
-      );
+      // A start that just happened but this device has not begun yet: play from
+      // the top instead of dropping into the middle and losing the intro.
+      const justStarted =
+        Boolean(room.starts_at) && startAt <= serverNow && serverNow - startAt < 10_000;
+      const fromTop = room.position_seconds <= 0.5;
+      const notStarted = !current || current.id !== room.current_track.id || !player.isPlaying;
+      const position =
+        justStarted && fromTop && notStarted
+          ? 0
+          : Math.min(
+              room.current_track.duration || 0,
+              Math.max(0, room.position_seconds + elapsed),
+            );
       const drift = Math.abs(player.progress - position);
       if (
         !current ||

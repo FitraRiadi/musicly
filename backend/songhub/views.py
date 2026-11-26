@@ -172,7 +172,7 @@ def _state(room: SongHubRoom, request, membership=None, status_code=status.HTTP_
 # How long listeners get to buffer before the room starts on its own, and the
 # countdown between "everyone is ready" and the first shared beat.
 READY_TIMEOUT_SECONDS = 8
-START_DELAY_SECONDS = 2.4
+START_DELAY_SECONDS = 3.0
 
 
 def _begin_waiting(room: SongHubRoom) -> None:
