@@ -179,6 +179,7 @@ export function TrackList({
               onDoubleClick={() =>
                 listenOnly ? requestTrackSelection(track) : playContext(tracks, i, context)
               }
+              onPointerDown={listenOnly ? undefined : () => warmTrackStream(track, true)}
               onPointerEnter={listenOnly ? undefined : () => warmTrackStream(track)}
               className="group grid grid-cols-[20px_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-white/[0.07] sm:grid-cols-[20px_minmax(0,1.6fr)_minmax(0,1fr)_36px_96px] sm:gap-4"
             >

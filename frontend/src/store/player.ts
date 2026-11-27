@@ -79,24 +79,37 @@ let warmTimer: ReturnType<typeof setTimeout> | null = null;
 let warmPending: Track | null = null;
 const warmedStreams = new Set<string>();
 
-export function warmTrackStream(track: Track) {
+function warmStreamNow(target: Track) {
+  if (!target.has_full_audio || !target.stream_url || warmedStreams.has(target.id)) return;
+  warmedStreams.add(target.id);
+  fetch(apiUrl(target.stream_url), { headers: { Range: "bytes=0-0" } })
+    .then((response) => {
+      response.body?.cancel().catch(() => undefined);
+      // A redirect means the scraper gave up and the player would fall back
+      // to the preview, so let the next hover try again.
+      if (!response.ok || response.redirected) warmedStreams.delete(target.id);
+    })
+    .catch(() => warmedStreams.delete(target.id));
+}
+
+export function warmTrackStream(track: Track, immediate = false) {
   if (!track.has_full_audio || !track.stream_url) return;
+  if (immediate) {
+    // A press is the last chance to warm the server before the audio element
+    // asks for the same track a moment later.
+    if (warmTimer) clearTimeout(warmTimer);
+    warmTimer = null;
+    warmPending = null;
+    warmStreamNow(track);
+    return;
+  }
   warmPending = track;
   if (warmTimer) clearTimeout(warmTimer);
   warmTimer = setTimeout(() => {
     warmTimer = null;
     const target = warmPending;
     warmPending = null;
-    if (!target || !target.stream_url || warmedStreams.has(target.id)) return;
-    warmedStreams.add(target.id);
-    fetch(apiUrl(target.stream_url), { headers: { Range: "bytes=0-0" } })
-      .then((response) => {
-        response.body?.cancel().catch(() => undefined);
-        // A redirect means the scraper gave up and the player would fall back
-        // to the preview, so let the next hover try again.
-        if (!response.ok || response.redirected) warmedStreams.delete(target.id);
-      })
-      .catch(() => warmedStreams.delete(target.id));
+    if (target) warmStreamNow(target);
   }, 300);
 }
 

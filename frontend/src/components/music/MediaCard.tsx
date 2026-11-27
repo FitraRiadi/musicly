@@ -121,6 +121,7 @@ export function MediaCard({
   return (
     <Link
       to={meta.href}
+      onPointerDown={kind === "track" ? () => warmTrackStream(item as Track, true) : undefined}
       onPointerEnter={kind === "track" ? () => warmTrackStream(item as Track) : undefined}
       className={cn(
         "group relative flex flex-col gap-3 rounded-xl bg-white/[0.035] p-3 transition-colors duration-200 hover:bg-white/[0.09]",

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from difflib import SequenceMatcher
 
@@ -258,31 +259,57 @@ def resolve_video_id(track, *, force: bool = False) -> str:
     """Return (and cache) the YouTube video id for a cached Track row."""
     key = f"yt:resolve:v{RESOLVE_CACHE_VERSION}:{track.deezer_id}"
     miss_key = f"{key}:miss"
-    if force:
-        # A forced retry exists because the old match stopped working. Do not
-        # leave it in the cache if the fresh search also fails.
-        cache.delete(key)
-    else:
-        cached = cache.get(key)
-        if cached:
-            return cached
-        if cache.get(miss_key):
-            raise StreamUnavailable("No YouTube match is cached for this track.")
+    if not force:
+        found = _cached_resolve(key, miss_key)
+        if found:
+            return found
 
-    try:
-        video_id, confident = _search_video_id(track)
-    except StreamUnavailable:
-        cache.set(miss_key, True, NEGATIVE_TTL)
-        raise
+    # A hover prefetch and the click after it, the player and its next-track
+    # preload, or several Song Hub listeners loading the same song all miss the
+    # cache together. One yt-dlp search per track is enough; the rest wait here
+    # and then read the warm cache instead of burning four seconds each.
+    with _resolve_lock(key):
+        if force:
+            # A forced retry exists because the old match stopped working. Do
+            # not leave it in the cache if the fresh search also fails.
+            cache.delete(key)
+        else:
+            found = _cached_resolve(key, miss_key)
+            if found:
+                return found
 
-    if confident:
-        cache.set(key, video_id, RESOLVE_TTL)
-    else:
-        # Never pin an uncertain match; the next play must search again.
-        cache.delete(key)
-    cache.delete(miss_key)
-    _warm_stream(video_id)
-    return video_id
+        try:
+            video_id, confident = _search_video_id(track)
+        except StreamUnavailable:
+            cache.set(miss_key, True, NEGATIVE_TTL)
+            raise
+
+        if confident:
+            cache.set(key, video_id, RESOLVE_TTL)
+        else:
+            # Never pin an uncertain match; the next play must search again.
+            cache.delete(key)
+        cache.delete(miss_key)
+        _warm_stream(video_id)
+        return video_id
+
+
+def _cached_resolve(key: str, miss_key: str) -> str | None:
+    cached = cache.get(key)
+    if cached:
+        return cached
+    if cache.get(miss_key):
+        raise StreamUnavailable("No YouTube match is cached for this track.")
+    return None
+
+
+_resolve_locks: dict[str, threading.Lock] = {}
+_resolve_locks_guard = threading.Lock()
+
+
+def _resolve_lock(key: str) -> threading.Lock:
+    with _resolve_locks_guard:
+        return _resolve_locks.setdefault(key, threading.Lock())
 
 
 def _open_upstream(video_id: str, range_header: str | None):
