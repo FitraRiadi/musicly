@@ -8,12 +8,11 @@ import {
   Text,
   Title as TremorTitle,
 } from "@tremor/react";
-import { Clock3, Disc3, Heart, ListMusic, Music2, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
+import { Clock3, Disc3, Heart, ListMusic, Music2, RefreshCw, TrendingUp } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Insights } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -77,9 +76,6 @@ export function DashboardPage() {
       <div className="relative flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Badge variant="default" className="gap-1">
-              <Sparkles className="h-3 w-3" /> Tremor analytics
-            </Badge>
             <span className="text-[11px] text-white/35">Last 14 days</span>
           </div>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight md:text-4xl">Listening dashboard</h1>
@@ -238,9 +234,6 @@ export function DashboardPage() {
                     <Metric className="!text-lg !text-white">{formatCount(item.value)}</Metric>
                   </div>
                 ))}
-              </div>
-              <div className="mt-6 rounded-lg bg-primary/10 p-3 text-[11px] leading-relaxed text-primary/90">
-                Metrics update as you listen. History is recorded server-side in PostgreSQL.
               </div>
             </TremorCard>
           </div>

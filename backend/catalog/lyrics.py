@@ -39,6 +39,9 @@ _retry = Retry(
 SESSION.mount("https://", HTTPAdapter(max_retries=_retry, pool_maxsize=4))
 TIMEOUT = 8
 CACHE_HOURS = 24
+# Plain lyrics without timestamps are retried sooner so the synced version of
+# the same song can still be picked up.
+PLAIN_ONLY_RETRY_HOURS = 1
 
 
 def _normalize(value: str | None) -> str:
@@ -80,12 +83,16 @@ def _fetch(track: Track) -> dict[str, Any] | None:
         "album_name": track.album_title,
         "duration": track.duration,
     }
+    # A plain-only exact match is common when LRCLIB holds several versions of
+    # the same song, so keep it as a fallback while searching for timestamps.
+    exact: dict[str, Any] | None = None
     try:
         response = SESSION.get(f"{base}/get", params=params, timeout=TIMEOUT)
         if response.status_code == 200:
             found = _from_payload(response.json())
-            if found:
+            if found and (found["synced"] or found["instrumental"]):
                 return found
+            exact = found
         if response.status_code not in {200, 404}:
             logger.info("LRCLIB get returned %s for %s", response.status_code, track.title)
     except (requests.RequestException, ValueError) as exc:
@@ -103,42 +110,41 @@ def _fetch(track: Track) -> dict[str, Any] | None:
         results = response.json()
     except (requests.RequestException, ValueError) as exc:
         logger.info("LRCLIB search failed for %s: %s", track.title, exc)
-        return None
+        return exact
 
     if not isinstance(results, list) or not results:
-        return None
+        return exact
     best = max(results, key=lambda item: _score(item, track))
     best_title = _normalize(best.get("trackName"))
     target_title = _normalize(track.title)
     if not best_title or not target_title:
-        return None
+        return exact
     if target_title not in best_title and best_title not in target_title:
-        return None
+        return exact
     if _score(best, track) < 35:
-        return None
-    return _from_payload(best)
+        return exact
+    return _from_payload(best) or exact
 
 
 def ensure_lyrics(track: Track, force: bool = False) -> Track:
     """Populate the track's cached lyrics, respecting the negative cache."""
-    if track.lyrics_plain or track.lyrics_synced or track.lyrics_instrumental:
+    if track.lyrics_synced or track.lyrics_instrumental or track.lyrics_source == "admin":
         return track
 
+    # Plain-only rows are not final: the timestamps often live on a sibling
+    # LRCLIB entry, so retry them soon instead of holding the 24h cache.
     now = timezone.now()
-    if (
-        not force
-        and track.lyrics_checked_at
-        and now - track.lyrics_checked_at < timedelta(hours=CACHE_HOURS)
-    ):
+    ttl = timedelta(hours=PLAIN_ONLY_RETRY_HOURS if track.lyrics_plain else CACHE_HOURS)
+    if not force and track.lyrics_checked_at and now - track.lyrics_checked_at < ttl:
         return track
 
     found = _fetch(track)
     track.lyrics_checked_at = now
     update_fields = ["lyrics_checked_at"]
     if found:
-        track.lyrics_plain = found["plain"]
-        track.lyrics_synced = found["synced"]
-        track.lyrics_instrumental = found["instrumental"]
+        track.lyrics_plain = found["plain"] or track.lyrics_plain
+        track.lyrics_synced = found["synced"] or track.lyrics_synced
+        track.lyrics_instrumental = found["instrumental"] or track.lyrics_instrumental
         track.lyrics_source = "lrclib"
         update_fields.extend(
             ["lyrics_plain", "lyrics_synced", "lyrics_instrumental", "lyrics_source"]

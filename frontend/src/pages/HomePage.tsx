@@ -90,8 +90,7 @@ export function HomePage() {
       <div className="relative pt-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/90">Musicly</p>
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight md:text-4xl">{greeting()}</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">{greeting()}</h1>
             <p className="mt-1 text-sm text-white/50">{subtitle}</p>
           </div>
           {!user && (

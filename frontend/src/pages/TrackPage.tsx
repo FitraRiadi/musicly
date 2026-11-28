@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   CheckCircle2,
@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { saveTrackAudioFile } from "@/lib/download";
+import { activeLineIndex, parseLrc } from "@/hooks/useLyrics";
 import type { Album, Artist, Lyrics, Track } from "@/lib/types";
 import { TrackList } from "@/components/music/TrackList";
 import { MediaCard } from "@/components/music/MediaCard";
@@ -95,7 +96,7 @@ export function TrackPage() {
   const openAddToPlaylist = useUiStore((state) => state.openAddToPlaylist);
   const user = useAuthStore((state) => state.user);
 
-  const { queue, index, isPlaying, playContext, togglePlay, addToQueue, playNext } = usePlayerStore();
+  const { queue, index, isPlaying, progress, seek, playContext, togglePlay, addToQueue, playNext } = usePlayerStore();
   const liked = useLibraryStore((state) => state.isLiked(id || ""));
   const toggleLike = useLibraryStore((state) => state.toggleLike);
   const toggleFollow = useLibraryStore((state) => state.toggleFollow);
@@ -195,6 +196,23 @@ export function TrackPage() {
     [artist?.top_tracks, track?.id],
   );
   const lyricLines = useMemo(() => lyricLinesFrom(lyrics), [lyrics]);
+  const syncedLyricLines = useMemo(() => parseLrc(lyrics?.synced || ""), [lyrics?.synced]);
+  // Synced lyrics only follow the audio when this page's track is the one playing.
+  const activeLyricIndex =
+    isCurrent && syncedLyricLines.length ? activeLineIndex(syncedLyricLines, progress) : -1;
+  const displayLines = useMemo(
+    () =>
+      syncedLyricLines.length
+        ? syncedLyricLines.map((line) => ({ key: `${line.time}-${line.text}`, text: line.text, time: line.time as number | null }))
+        : lyricLines.map((text, position) => ({ key: `${position}-${text}`, text, time: null as number | null })),
+    [syncedLyricLines, lyricLines],
+  );
+  const lyricLineRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  useEffect(() => {
+    if (!lyricsExpanded || activeLyricIndex < 0) return;
+    lyricLineRefs.current[activeLyricIndex]?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeLyricIndex, lyricsExpanded]);
   const relatedArtists = artist?.related?.slice(0, 4) || [];
   const otherAlbums = (artist?.album_list || []).filter((item) => item.id !== album?.id).slice(0, 6);
   const totalSeconds = albumTracks.reduce((sum, item) => sum + item.duration, 0);
@@ -521,16 +539,11 @@ export function TrackPage() {
         <div className="min-w-0 space-y-10">
           <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.08] via-white/[0.035] to-transparent p-5 sm:p-6">
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary">
-                  <Quote className="h-4 w-4 fill-current" />
-                </span>
-                <div>
-                  <h2 className="text-sm font-bold">Lyrics</h2>
-                  <p className="text-[11px] text-white/40">{track.title}</p>
-                </div>
+              <div>
+                <h2 className="text-sm font-bold">Lyrics</h2>
+                <p className="text-[11px] text-white/40">{track.title}</p>
               </div>
-              {lyricLines.length > 8 && (
+              {displayLines.length > 8 && (
                 <button
                   onClick={() => setLyricsExpanded((value) => !value)}
                   className="shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold text-white/60 transition hover:bg-white/10 hover:text-white"
@@ -556,20 +569,47 @@ export function TrackPage() {
                 <p className="text-sm font-semibold text-white/70">Instrumental</p>
                 <p className="text-xs text-white/40">This song has no lyrics.</p>
               </div>
-            ) : lyricLines.length ? (
+            ) : displayLines.length ? (
               <div
                 className={cn(
                   "relative mt-5 space-y-3",
-                  !lyricsExpanded && lyricLines.length > 8 && "max-h-52 overflow-hidden",
+                  !lyricsExpanded && displayLines.length > 8 && "max-h-52 overflow-hidden",
                   lyricsExpanded && "thin-scrollbar max-h-80 overflow-y-auto pr-2",
                 )}
               >
-                {lyricLines.slice(0, lyricsExpanded ? lyricLines.length : 9).map((line, position) => (
-                  <p key={`${line}-${position}`} className="text-[15px] font-semibold leading-relaxed text-white/75">
-                    {line}
-                  </p>
-                ))}
-                {!lyricsExpanded && lyricLines.length > 8 && (
+                {displayLines.slice(0, lyricsExpanded ? displayLines.length : 9).map((line, position) => {
+                  const active = position === activeLyricIndex;
+                  const lineClassName = cn(
+                    "block w-full text-left text-[15px] font-semibold leading-relaxed transition-colors",
+                    line.time === null
+                      ? "text-white/75"
+                      : active
+                        ? "text-white"
+                        : "cursor-pointer text-white/40 hover:text-white",
+                  );
+                  if (line.time === null) {
+                    return (
+                      <p key={line.key} className={lineClassName}>
+                        {line.text}
+                      </p>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      key={line.key}
+                      ref={(node) => {
+                        lyricLineRefs.current[position] = node;
+                      }}
+                      onClick={() => seek(line.time as number)}
+                      className={lineClassName}
+                      title="Jump to this line"
+                    >
+                      {line.text}
+                    </button>
+                  );
+                })}
+                {!lyricsExpanded && displayLines.length > 8 && (
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-ink-850 to-transparent" />
                 )}
               </div>

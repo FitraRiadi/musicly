@@ -10,6 +10,7 @@ import {
   Plus,
   Radio,
   Search,
+  X,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,6 +34,7 @@ const navItems = [
 ];
 
 const SIDEBAR_TOP_KEY = "musicly_sidebar_top_height";
+const INSTALL_DISMISSED_KEY = "musicly_install_dismissed";
 const MIN_TOP_HEIGHT = 210;
 const MIN_LIBRARY_HEIGHT = 190;
 
@@ -57,6 +59,9 @@ export function Sidebar() {
   const hubInvites = useSongHubStore((state) => state.invitations.length);
   const openCreatePlaylist = useUiStore((state) => state.openCreatePlaylist);
   const { canInstall, promptInstall } = useInstallPrompt();
+  const [installDismissed, setInstallDismissed] = useState(
+    () => localStorage.getItem(INSTALL_DISMISSED_KEY) === "1",
+  );
   const asideRef = useRef<HTMLElement | null>(null);
   const topRef = useRef<HTMLDivElement | null>(null);
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -335,9 +340,19 @@ export function Sidebar() {
           </div>
         </ScrollArea>
 
-        {canInstall && (
-          <div className="m-3 rounded-xl bg-gradient-to-br from-primary/20 to-transparent p-3">
-            <div className="flex items-center gap-2 text-sm font-semibold">
+        {canInstall && !installDismissed && (
+          <div className="relative m-3 rounded-xl bg-gradient-to-br from-primary/20 to-transparent p-3">
+            <button
+              onClick={() => {
+                localStorage.setItem(INSTALL_DISMISSED_KEY, "1");
+                setInstallDismissed(true);
+              }}
+              className="absolute right-1.5 top-1.5 rounded-full p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+              aria-label="Dismiss install prompt"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+            <div className="flex items-center gap-2 pr-5 text-sm font-semibold">
               <Download className="h-4 w-4 text-primary" /> Install Musicly
             </div>
             <p className="mt-1 text-[11px] leading-snug text-white/55">

@@ -32,6 +32,8 @@
 
   html {
     -webkit-tap-highlight-color: transparent;
+    /* Everything rem-based (text, padding, gaps) renders at ~90% zoom. */
+    font-size: 90%;
   }
 
   body {

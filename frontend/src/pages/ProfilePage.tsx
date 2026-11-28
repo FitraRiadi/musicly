@@ -64,6 +64,7 @@ export function ProfilePage() {
   const mutationRef = useRef(0);
   const [friendsData, setFriendsData] = useState<FriendList | null>(null);
   const [badges, setBadges] = useState<BadgeModel[]>([]);
+  const [badgesExpanded, setBadgesExpanded] = useState(false);
   const [collecting, setCollecting] = useState<string | null>(null);
   const [badgesLoading, setBadgesLoading] = useState(true);
 
@@ -467,11 +468,18 @@ export function ProfilePage() {
               Badges are shown on your public profile. Keep listening, saving and connecting to unlock them.
             </p>
           </div>
-          <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <Link to="/search?type=user">
-              <Search className="h-3.5 w-3.5" /> Find people
-            </Link>
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button asChild variant="ghost" size="sm" className="gap-1.5">
+              <Link to="/search?type=user">
+                <Search className="h-3.5 w-3.5" /> Find people
+              </Link>
+            </Button>
+            {badges.length > 6 && (
+              <Button variant="ghost" size="sm" onClick={() => setBadgesExpanded((value) => !value)}>
+                {badgesExpanded ? "Show less" : `Show all ${badges.length}`}
+              </Button>
+            )}
+          </div>
         </div>
         {badgesLoading && badges.length === 0 ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -481,7 +489,7 @@ export function ProfilePage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {badges.map((badge) => (
+            {badges.slice(0, badgesExpanded ? badges.length : 6).map((badge) => (
               <BadgeTile
                 key={badge.slug}
                 badge={badge}
